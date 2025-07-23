@@ -12,6 +12,8 @@ import alpaca_trade_api as tradeapi
 from bs4 import BeautifulSoup
 import random
 
+import ta  # For technical indicators in ML
+
 # --- Scheduler Thread Function (define before sidebar/menu) ---
 def run_bot_job():
     """Run the aggressive trading bot using a Backtrader SMA crossover strategy and Alpaca for live trading."""
@@ -21,10 +23,11 @@ def run_bot_job():
         cash = float(acc.cash)
         affordable = []
         prices = {}
+        MIN_TRADE = 1.0
         for symbol in trending:
             try:
                 price = float(api.get_latest_trade(symbol).price)
-                if price > 0 and cash >= price * 0.01:  # allow for fractional shares as low as $0.01
+                if price >= MIN_TRADE and price <= cash:
                     affordable.append(symbol)
                     prices[symbol] = price
             except Exception:
@@ -46,6 +49,33 @@ def run_bot_job():
 
 # --- Trending Tickers Scraper ---
 def get_trending_tickers():
+    def get_robinhood_tickers():
+        try:
+            import robin_stocks.robinhood as r
+            # Robinhood requires login for most endpoints; use '100 Most Popular' as a public list
+            url = 'https://robinhood.com/collections/100-most-popular'
+            resp = requests.get(url, timeout=10)
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            tickers = []
+            for a in soup.find_all('a', href=True):
+                if '/stocks/' in a['href']:
+                    ticker = a['href'].split('/')[-1].upper()
+                    if ticker.isalpha() and len(ticker) <= 6:
+                        tickers.append(ticker)
+            return list(set(tickers))[:10] if tickers else None
+        except Exception as e:
+            print(f"Robinhood trending ticker error: {e}")
+            return None
+    def get_webull_tickers():
+        try:
+            from webull import webull
+            wb = webull()
+            hot = wb.get_hot_stock_list()
+            tickers = [item['ticker'] for item in hot if 'ticker' in item]
+            return tickers[:10] if tickers else None
+        except Exception as e:
+            print(f"Webull trending ticker error: {e}")
+            return None
     """Get trending/most active US tickers using Finnhub API, fallback to Yahoo scrape, then fallback tickers."""
     now = datetime.now()
     cache_key = 'trending_tickers_cache'
@@ -133,83 +163,84 @@ def get_trending_tickers():
         if tickers:
             return tickers
 
-    # Try flat file first
-    tickers = get_flatfile_tickers()
-    if tickers:
-        st.session_state[cache_key] = tickers
-        st.session_state[cache_time_key] = now
-        return tickers
+    # US stocks (existing logic)
+    us_tickers = (
+        get_flatfile_tickers()
+        or get_webull_tickers()
+        or get_robinhood_tickers()
+        or get_polygon_tickers()
+        or get_yahoo_tickers()
+        or get_fallback_tickers()
+    )
 
-    # Try Polygon
-    tickers = get_polygon_tickers()
-    if tickers:
-        st.session_state[cache_key] = tickers
-        st.session_state[cache_time_key] = now
-        return tickers
+    # Crypto tickers from Alpaca
+    try:
+        crypto_assets = api.list_assets(asset_class='crypto')
+        crypto_tickers = [a.symbol for a in crypto_assets if a.tradable]
+    except Exception:
+        crypto_tickers = []
 
-    # Try Yahoo
-    tickers = get_yahoo_tickers()
-    if tickers:
-        st.session_state[cache_key] = tickers
-        st.session_state[cache_time_key] = now
-        return tickers
-
-    # Fallback
-    tickers = get_fallback_tickers()
-    st.session_state[cache_key] = tickers
+    # Merge and cache
+    all_tickers = list(set((us_tickers or []) + (crypto_tickers or [])))
+    st.session_state[cache_key] = all_tickers
     st.session_state[cache_time_key] = now
-    return tickers
+    return all_tickers
 
 
 def find_first_buy_signal(symbols):
-    class SmaCross(bt.SignalStrategy):
-        def __init__(self):
-            sma1 = bt.ind.SMA(period=10)
-            sma2 = bt.ind.SMA(period=30)
-            self.signal_add(bt.SIGNAL_LONG, bt.ind.CrossOver(sma1, sma2))
 
-    def get_last_signal(strat):
-        if hasattr(strat, 'signals') and len(strat.signals) > 0:
-            return strat.signals[-1]
-        return None
-
-    def fallback_signal(data):
+    # --- ML Model for Buy/Sell Prediction ---
+    from prophet import Prophet
+    from textblob import TextBlob
+    import requests
+    # Helper: get news headlines for a symbol (Yahoo Finance)
+    def get_news_headlines(symbol):
         try:
-            return 1 if data['Close'].iloc[-1] > data['Close'].rolling(10).mean().iloc[-1] else 0
+            url = f'https://finance.yahoo.com/quote/{symbol}/news?p={symbol}'
+            resp = requests.get(url, timeout=10)
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            headlines = [el.get_text(strip=True) for el in soup.select('h3')]
+            return headlines[:5]  # Use top 5 headlines
         except Exception:
-            return 0
+            return []
 
-    # Use Alpaca's data API for US stocks
+    # Try time series forecasting and sentiment for each symbol
     for symbol in symbols:
         try:
-            # Fetch 30 days of 15-min bars (max 1000 bars per request)
-            bars = api.get_bars(symbol, '15Min', limit=1000).df
+            bars = api.get_bars(symbol, '15Min', limit=200).df
             if bars.empty:
-                # Try 7 days of 5-min bars if 15-min is empty
-                bars = api.get_bars(symbol, '5Min', limit=1000).df
+                bars = api.get_bars(symbol, '5Min', limit=200).df
             if bars.empty:
                 print(f"No Alpaca data for {symbol}, skipping.")
                 continue
-            # Rename columns to match Backtrader expectations
-            bars = bars.rename(columns={
-                'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'
-            })
-            # Backtrader expects datetime index
-            bars.index = pd.to_datetime(bars.index)
-            data_bt = bt.feeds.PandasData(dataname=bars)
-            cerebro = bt.Cerebro()
-            cerebro.addstrategy(SmaCross)
-            cerebro.adddata(data_bt)
-            cerebro.broker.set_cash(10000)
-            results = cerebro.run()
-            strat = results[0]
-            last_signal = get_last_signal(strat)
-            if last_signal is None:
-                last_signal = fallback_signal(bars)
-            if last_signal == 1:
+            # Prophet expects columns: ds (datetime), y (value)
+            df = bars.reset_index()[['timestamp', 'close']].rename(columns={'timestamp': 'ds', 'close': 'y'})
+            df['ds'] = pd.to_datetime(df['ds'])
+            # Fit Prophet model
+            m = Prophet(daily_seasonality=False, weekly_seasonality=False)
+            m.fit(df)
+            # Forecast next period
+            future = m.make_future_dataframe(periods=1, freq='15min')
+            forecast = m.predict(future)
+            last_actual = df['y'].iloc[-1]
+            next_pred = forecast['yhat'].iloc[-1]
+
+            # Sentiment analysis on news headlines
+            headlines = get_news_headlines(symbol)
+            if headlines:
+                sentiment_scores = [TextBlob(h).sentiment.polarity for h in headlines]
+                avg_sentiment = sum(sentiment_scores) / len(sentiment_scores)
+            else:
+                avg_sentiment = 0
+
+            # Buy if both Prophet predicts up and sentiment is positive
+            if next_pred > last_actual and avg_sentiment > 0:
+                print(f"{symbol}: Prophet up, Sentiment {avg_sentiment:.2f} (POSITIVE) => BUY")
                 return symbol
+            else:
+                print(f"{symbol}: Prophet {'up' if next_pred > last_actual else 'down'}, Sentiment {avg_sentiment:.2f}")
         except Exception as e:
-            print(f"Failed to process {symbol} with Alpaca data: {e}")
+            print(f"Sentiment/Prophet prediction failed for {symbol}: {e}")
             continue
     return None
 
