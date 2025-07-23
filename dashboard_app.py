@@ -1,24 +1,47 @@
+CARD_DIV_OPEN = '<div class="card">'
+CARD_DIV_CLOSE = '</div>'
+BOT_LOGS_LABEL = "Bot Logs"
+import alpaca_trade_api as tradeapi
+import os
+
+ALPACA_API_KEY = os.getenv("APCA_API_KEY_ID")
+ALPACA_SECRET_KEY = os.getenv("APCA_API_SECRET_KEY")
+ALPACA_BASE_URL = os.getenv("APCA_API_BASE_URL", "https://paper-api.alpaca.markets")
+
+api = tradeapi.REST(ALPACA_API_KEY, ALPACA_SECRET_KEY, ALPACA_BASE_URL, api_version='v2')
+
 def get_positions():
-    # Replace with real Alpaca API call
-    return pd.DataFrame([
-        {'symbol': 'AAPL', 'qty': 10, 'avg_entry_price': 180.5, 'market_value': 1820.0},
-        {'symbol': 'TSLA', 'qty': 2, 'avg_entry_price': 700.0, 'market_value': 1450.0}
-    ])
+    positions = api.list_positions()
+    return pd.DataFrame([{
+        'symbol': p.symbol,
+        'qty': float(p.qty),
+        'avg_entry_price': float(p.avg_entry_price),
+        'market_value': float(p.market_value)
+    } for p in positions])
+
+def get_account_info():
+    acc = api.get_account()
+    return {
+        'status': acc.status,
+        'equity': float(acc.equity),
+        'cash': float(acc.cash),
+        'buying_power': float(acc.buying_power),
+        'last_update': acc.updated_at
+    }
 
 def get_recent_trades():
-    # Replace with real trade log reading
-    return pd.DataFrame([
-        {'time': '2025-07-23 10:00', 'symbol': 'AAPL', 'side': 'buy', 'price': 180.5, 'qty': 10},
-        {'time': '2025-07-23 09:30', 'symbol': 'TSLA', 'side': 'sell', 'price': 725.0, 'qty': 1}
-    ])
+    activities = api.get_activities(activity_types='FILL', direction='desc', page_size=10)
+    return pd.DataFrame([{
+        'time': a.transaction_time,
+        'symbol': a.symbol,
+        'side': a.side,
+        'price': float(a.price),
+        'qty': float(a.qty)
+    } for a in activities])
 
 def get_bot_logs():
-    # Replace with reading from your log file
-    return [
-        '2025-07-23 10:00: Bought 10 AAPL at $180.5',
-        '2025-07-23 09:30: Sold 1 TSLA at $725.0',
-        '2025-07-23 09:00: Bot started.'
-    ]
+    # If you have a log file, read and return the last N lines here
+    return []
 
 import streamlit as st
 import pandas as pd
@@ -85,52 +108,45 @@ section.main > div {
 
 
 st.dataframe(get_recent_trades())
-st.subheader("Bot Logs")
+st.subheader(BOT_LOGS_LABEL)
 st.code('\n'.join(get_bot_logs()))
 
 
 
 st.subheader("Recent Trades")
 st.dataframe(get_recent_trades())
-st.subheader("Bot Logs")
+st.subheader(BOT_LOGS_LABEL)
 st.code('\n'.join(get_bot_logs()))
 
 # --- Main Card Layout ---
 main1, main2 = st.columns([2, 1])
 with main1:
     with st.container():
-        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown(CARD_DIV_OPEN, unsafe_allow_html=True)
         st.subheader("Recent Trades")
         st.dataframe(get_recent_trades(), use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown(CARD_DIV_CLOSE, unsafe_allow_html=True)
     with st.container():
-        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown(CARD_DIV_OPEN, unsafe_allow_html=True)
         st.subheader("Current Positions")
         st.dataframe(get_positions(), use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown(CARD_DIV_CLOSE, unsafe_allow_html=True)
 with main2:
     with st.container():
-        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown(CARD_DIV_OPEN, unsafe_allow_html=True)
         st.subheader("Account Info")
-        # Replace with real account info from Alpaca API
-        acc = {
-            'status': 'ACTIVE',
-            'equity': 10000.00,
-            'cash': 5000.00,
-            'buying_power': 20000.00,
-            'last_update': '2025-07-23 10:00'
-        }
+        acc = get_account_info()
         st.write(f"**Status:** {acc['status']}")
         st.write(f"**Equity:** ${acc['equity']:,}")
         st.write(f"**Cash:** ${acc['cash']:,}")
         st.write(f"**Buying Power:** ${acc['buying_power']:,}")
         st.write(f"**Last Update:** {acc['last_update']}")
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown(CARD_DIV_CLOSE, unsafe_allow_html=True)
     with st.container():
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.subheader("Bot Logs")
+        st.markdown(CARD_DIV_OPEN, unsafe_allow_html=True)
+        st.subheader(BOT_LOGS_LABEL)
         st.code('\n'.join(get_bot_logs()))
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown(CARD_DIV_CLOSE, unsafe_allow_html=True)
 
 
 

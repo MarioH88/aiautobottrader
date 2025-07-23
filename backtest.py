@@ -21,7 +21,7 @@ def _decide_action(row: pd.Series, features: pd.DataFrame, model: Optional[Any],
         return -1
     return 0
 
-def _execute_trade(action: int, row: pd.Series, position: int, entry_price: float, trades: List[Dict], slippage: float, commission: float) -> (int, float):
+def _execute_trade(action: int, row: pd.Series, position: int, entry_price: float, trades: List[Dict], slippage: float, commission: float) -> Tuple[int, float]:
     """Update position, entry price, and trades list based on action."""
     if action == 1 and position == 0:
         position = 1
