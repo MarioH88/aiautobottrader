@@ -1,3 +1,24 @@
+def get_positions():
+    # Replace with real Alpaca API call
+    return pd.DataFrame([
+        {'symbol': 'AAPL', 'qty': 10, 'avg_entry_price': 180.5, 'market_value': 1820.0},
+        {'symbol': 'TSLA', 'qty': 2, 'avg_entry_price': 700.0, 'market_value': 1450.0}
+    ])
+
+def get_recent_trades():
+    # Replace with real trade log reading
+    return pd.DataFrame([
+        {'time': '2025-07-23 10:00', 'symbol': 'AAPL', 'side': 'buy', 'price': 180.5, 'qty': 10},
+        {'time': '2025-07-23 09:30', 'symbol': 'TSLA', 'side': 'sell', 'price': 725.0, 'qty': 1}
+    ])
+
+def get_bot_logs():
+    # Replace with reading from your log file
+    return [
+        '2025-07-23 10:00: Bought 10 AAPL at $180.5',
+        '2025-07-23 09:30: Sold 1 TSLA at $725.0',
+        '2025-07-23 09:00: Bot started.'
+    ]
 
 import streamlit as st
 import pandas as pd
@@ -21,8 +42,8 @@ col_logo, col_title = st.columns([1, 5])
 with col_logo:
     st_lottie(lottie_trading, height=80, key="trading")
 with col_title:
-    st.title("Trading Bot Dashboard")
-    st.caption("Professional Automated Trading Monitoring")
+    st.title("AI Automated Trading Bot Dashboard")
+    st.caption("Just Sit Back and Relax, Your Bot is Trading for You")
 
 st.markdown("""
 <style>
@@ -31,31 +52,9 @@ body {background-color: #111; color: #fff;}
 .metric-card {background: #181818; border-radius: 12px; padding: 1.2em 1em; margin-bottom: 1em; box-shadow: 0 2px 8px #0002;}
 .stButton>button {background-color: #ff3333; color: #fff; border-radius: 8px; font-weight: bold;}
 .red-text { color: #ff3333 !important; }
-.green-text { color: #33ff33 !important; }
 .status-badge {display: inline-block; padding: 0.25em 0.7em; border-radius: 8px; font-weight: bold; background: #ff3333; color: #fff; margin-left: 0.5em;}
 st.info("This dashboard is a template. Connect it to your live trading bot and logs for real-time monitoring.")
 
-def get_positions():
-    # Replace with real Alpaca API call
-    return pd.DataFrame([
-        {'symbol': 'AAPL', 'qty': 10, 'avg_entry_price': 180.5, 'market_value': 1820.0},
-        {'symbol': 'TSLA', 'qty': 2, 'avg_entry_price': 700.0, 'market_value': 1450.0}
-    ])
-
-def get_recent_trades():
-    # Replace with real trade log reading
-    return pd.DataFrame([
-        {'time': '2025-07-23 10:00', 'symbol': 'AAPL', 'side': 'buy', 'price': 180.5, 'qty': 10},
-        {'time': '2025-07-23 09:30', 'symbol': 'TSLA', 'side': 'sell', 'price': 725.0, 'qty': 1}
-    ])
-
-def get_bot_logs():
-    # Replace with reading from your log file
-    return [
-        '2025-07-23 10:00: Bought 10 AAPL at $180.5',
-        '2025-07-23 09:30: Sold 1 TSLA at $725.0',
-        '2025-07-23 09:00: Bot started.'
-    ]
 
 <style>
 body {
@@ -89,25 +88,7 @@ st.dataframe(get_recent_trades())
 st.subheader("Bot Logs")
 st.code('\n'.join(get_bot_logs()))
 
-# --- Demo Data (replace with real API calls in production) ---
-def get_positions():
-    return pd.DataFrame([
-        {'symbol': 'AAPL', 'qty': 10, 'avg_entry_price': 180.5, 'market_value': 1820.0},
-        {'symbol': 'TSLA', 'qty': 2, 'avg_entry_price': 700.0, 'market_value': 1450.0}
-    ])
 
-def get_recent_trades():
-    return pd.DataFrame([
-        {'time': '2025-07-23 10:00', 'symbol': 'AAPL', 'side': 'buy', 'price': 180.5, 'qty': 10},
-        {'time': '2025-07-23 09:30', 'symbol': 'TSLA', 'side': 'sell', 'price': 725.0, 'qty': 1}
-    ])
-
-def get_bot_logs():
-    return [
-        '2025-07-23 10:00: Bought 10 AAPL at $180.5',
-        '2025-07-23 09:30: Sold 1 TSLA at $725.0',
-        '2025-07-23 09:00: Bot started.'
-    ]
 
 st.subheader("Recent Trades")
 st.dataframe(get_recent_trades())
