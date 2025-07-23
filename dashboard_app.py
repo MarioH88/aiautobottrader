@@ -1,66 +1,84 @@
 import time
+import threading
+import os
+import pandas as pd
+import streamlit as st
+from datetime import datetime
+import requests
 import yfinance as yf
 import backtrader as bt
+from dotenv import load_dotenv
+import alpaca_trade_api as tradeapi
+from bs4 import BeautifulSoup
 
 # --- Scheduler Thread Function (define before sidebar/menu) ---
 def run_bot_job():
     """Run the aggressive trading bot using a Backtrader SMA crossover strategy and Alpaca for live trading."""
     symbols = ['AAPL', 'MSFT', 'GOOG', 'NVDA', 'TSLA']
-    best_symbol = None
     try:
-        class SmaCross(bt.SignalStrategy):
-            def __init__(self):
-                sma1 = bt.ind.SMA(period=10)
-                sma2 = bt.ind.SMA(period=30)
-                self.signal_add(bt.SIGNAL_LONG, bt.ind.CrossOver(sma1, sma2))
-
-        # Find first symbol with a buy signal
-        for symbol in symbols:
-            data = yf.download(symbol, period='30d', interval='15m')
-            if data.empty:
-                continue
-            data_bt = bt.feeds.PandasData(dataname=data)
-            cerebro = bt.Cerebro()
-            cerebro.addstrategy(SmaCross)
-            cerebro.adddata(data_bt)
-            cerebro.broker.set_cash(10000)
-            results = cerebro.run()
-            strat = results[0]
-            # Try to get last signal from Backtrader
-            last_signal = None
-            if hasattr(strat, 'signals') and len(strat.signals) > 0:
-                last_signal = strat.signals[-1]
-            # Fallback: check if last close > SMA(10)
-            if last_signal is None:
-                try:
-                    last_signal = 1 if data['Close'][-1] > data['Close'].rolling(10).mean()[-1] else 0
-                except Exception:
-                    last_signal = 0
-            if last_signal == 1:
-                best_symbol = symbol
-                break
-        # Place trade if a buy signal was found
-        if best_symbol:
-            acc = api.get_account()
-            price = float(api.get_last_trade(best_symbol).price)
-            cash = float(acc.cash)
-            qty = int(cash // price)
-            if qty > 0:
-                api.submit_order(
-                    symbol=best_symbol,
-                    qty=qty,
-                    side='buy',
-                    type='market',
-                    time_in_force='gtc'
-                )
-                print(f"Placed market buy order for {qty} shares of {best_symbol}.")
-            else:
-                print(f"Insufficient cash to buy {best_symbol}. Skipping trade.")
-        else:
-            print("No buy signal found for any symbol. Skipping trade.")
+        best_symbol = find_first_buy_signal(symbols)
+        place_aggressive_trade(best_symbol)
     except Exception as e:
         print(f"Trade error: {e}")
     st.session_state['last_run'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+
+def find_first_buy_signal(symbols):
+    class SmaCross(bt.SignalStrategy):
+        def __init__(self):
+            sma1 = bt.ind.SMA(period=10)
+            sma2 = bt.ind.SMA(period=30)
+            self.signal_add(bt.SIGNAL_LONG, bt.ind.CrossOver(sma1, sma2))
+
+    def get_last_signal(strat):
+        if hasattr(strat, 'signals') and len(strat.signals) > 0:
+            return strat.signals[-1]
+        return None
+
+    def fallback_signal(data):
+        try:
+            return 1 if data['Close'][-1] > data['Close'].rolling(10).mean()[-1] else 0
+        except Exception:
+            return 0
+
+    for symbol in symbols:
+        data = yf.download(symbol, period='30d', interval='15m')
+        if data.empty:
+            continue
+        data_bt = bt.feeds.PandasData(dataname=data)
+        cerebro = bt.Cerebro()
+        cerebro.addstrategy(SmaCross)
+        cerebro.adddata(data_bt)
+        cerebro.broker.set_cash(10000)
+        results = cerebro.run()
+        strat = results[0]
+        last_signal = get_last_signal(strat)
+        if last_signal is None:
+            last_signal = fallback_signal(data)
+        if last_signal == 1:
+            return symbol
+    return None
+
+
+def place_aggressive_trade(symbol):
+    if not symbol:
+        print("No buy signal found for any symbol. Skipping trade.")
+        return
+    acc = api.get_account()
+    price = float(api.get_last_trade(symbol).price)
+    cash = float(acc.cash)
+    qty = int(cash // price)
+    if qty > 0:
+        api.submit_order(
+            symbol=symbol,
+            qty=qty,
+            side='buy',
+            type='market',
+            time_in_force='gtc'
+        )
+        print(f"Placed market buy order for {qty} shares of {symbol}.")
+    else:
+        print(f"Insufficient cash to buy {symbol}. Skipping trade.")
 import threading
 # --- Scheduler Thread Function (define before sidebar/menu) ---
 def scheduler_thread(target_dt):
@@ -74,7 +92,6 @@ def scheduler_thread(target_dt):
 from dotenv import load_dotenv
 import os
 import pandas as pd
-ALPACA_API_KEY = os.getenv("PKTPQ64STD8F9IN7P4FDD")
 # --- Cleaned, single-version dashboard app ---
 import streamlit as st
 from datetime import datetime
@@ -82,57 +99,6 @@ from streamlit_lottie import st_lottie
 import requests
 import alpaca_trade_api as tradeapi
 from bs4 import BeautifulSoup
-# --- Additional Tools for AI Trading Bot (for future integration) ---
-# Sentiment Analysis
-try:
-    from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-except ImportError:
-    SentimentIntensityAnalyzer = None
-# Hugging Face Transformers (advanced NLP)
-try:
-    from transformers import pipeline
-except ImportError:
-    pipeline = None
-# Alternative Data
-try:
-    import yfinance as yf
-except ImportError:
-    yf = None
-try:
-    import finnhub
-except ImportError:
-    finnhub = None
-# Backtesting & Optimization
-try:
-    import backtrader as bt
-except ImportError:
-    bt = None
-try:
-    import optuna
-except ImportError:
-    optuna = None
-# Logging
-try:
-    from loguru import logger
-except ImportError:
-    logger = None
-# Visualization
-try:
-    import plotly.express as px
-except ImportError:
-    px = None
-# Scheduler (advanced)
-try:
-    from apscheduler.schedulers.background import BackgroundScheduler
-except ImportError:
-    BackgroundScheduler = None
-# Error Monitoring
-try:
-    import sentry_sdk
-except ImportError:
-    sentry_sdk = None
-
-# These imports are for future use and do not affect current app logic.
 
 # --- Lottie Loader Utility (define before use) ---
 def load_lottieurl(url):
