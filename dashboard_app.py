@@ -318,6 +318,7 @@ def get_positions():
         'market_value': float(p.market_value)
     } for p in positions])
 
+
 def get_account_info():
     acc = api.get_account()
     return {
@@ -328,6 +329,7 @@ def get_account_info():
         'last_update': getattr(acc, 'last_equity_update', None)
     }
 
+# --- Recent Trades Helper ---
 def get_recent_trades(max_trades=500):
     # Alpaca API max page_size is 100, so we need to paginate
     all_activities = []
@@ -350,7 +352,10 @@ def get_recent_trades(max_trades=500):
         try:
             page_token = resp[-1].id
         except Exception:
+            page_token = None
             break
+    if not all_activities:
+        return pd.DataFrame(columns=['time', 'symbol', 'side', 'price', 'qty'])
     return pd.DataFrame([{
         'time': pd.to_datetime(a.transaction_time),
         'symbol': a.symbol,
@@ -506,6 +511,14 @@ if menu == MENU_DASHBOARD:
     trending_tickers = get_trending_tickers()
     if not trending_tickers:
         st.warning("No trending tickers available. Bot will use fallback tickers.")
+
+    # Show all trending tickers being scraped
+    with st.expander("Show Trending Tickers Being Scraped", expanded=False):
+        if trending_tickers:
+            st.write(f"**{len(trending_tickers)} Trending Tickers:**")
+            st.write(", ".join(trending_tickers))
+        else:
+            st.info("No trending tickers found.")
 
     # No yfinance check needed; Alpaca data is used for all signals and trading
 
