@@ -36,17 +36,25 @@ def get_trending_tickers():
         cache_time_key in st.session_state and
         (now - st.session_state[cache_time_key]).total_seconds() < cache_duration
     ):
-        return st.session_state[cache_key]
+        tickers = st.session_state[cache_key]
+        if tickers:
+            return tickers
+    # Fallback default tickers (S&P 500 top 10 by market cap)
+    # yfinance ticker format: BRK-B -> BRK.B
+    fallback_tickers = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "BRK.B", "UNH", "V"]
     try:
         resp = requests.get(url, timeout=10)
         if resp.status_code == 429:
             print("Trending ticker scrape error: 429 Too Many Requests. Using last cached tickers if available.")
-            return st.session_state.get(cache_key, [])
+            tickers = st.session_state.get(cache_key, [])
+            if not tickers:
+                return fallback_tickers
+            return tickers
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, 'html.parser')
         table = soup.find('table')
         if not table:
-            return []
+            return fallback_tickers
         tickers = []
         for row in table.find_all('tr')[1:]:
             cols = row.find_all('td')
@@ -57,11 +65,16 @@ def get_trending_tickers():
         tickers = tickers[:10]  # Limit to top 10
         st.session_state[cache_key] = tickers
         st.session_state[cache_time_key] = now
+        if not tickers:
+            return fallback_tickers
         return tickers
     except Exception as e:
         print(f"Trending ticker scrape error: {e}")
-        # On error, return last cached tickers if available
-        return st.session_state.get(cache_key, [])
+        # On error, return last cached tickers if available, else fallback
+        tickers = st.session_state.get(cache_key, [])
+        if not tickers:
+            return fallback_tickers
+        return tickers
 
 
 def find_first_buy_signal(symbols):
@@ -84,21 +97,29 @@ def find_first_buy_signal(symbols):
 
     # Use only the provided dynamic trending tickers list
     for symbol in symbols:
-        data = yf.download(symbol, period='30d', interval='15m')
-        if data.empty:
+        try:
+            data = yf.download(symbol, period='30d', interval='15m', progress=False)
+            if data.empty:
+                # Try shorter period/interval if 30d/15m fails
+                data = yf.download(symbol, period='7d', interval='5m', progress=False)
+            if data.empty:
+                print(f"No data for {symbol}, skipping.")
+                continue
+            data_bt = bt.feeds.PandasData(dataname=data)
+            cerebro = bt.Cerebro()
+            cerebro.addstrategy(SmaCross)
+            cerebro.adddata(data_bt)
+            cerebro.broker.set_cash(10000)
+            results = cerebro.run()
+            strat = results[0]
+            last_signal = get_last_signal(strat)
+            if last_signal is None:
+                last_signal = fallback_signal(data)
+            if last_signal == 1:
+                return symbol
+        except Exception as e:
+            print(f"Failed to process {symbol}: {e}")
             continue
-        data_bt = bt.feeds.PandasData(dataname=data)
-        cerebro = bt.Cerebro()
-        cerebro.addstrategy(SmaCross)
-        cerebro.adddata(data_bt)
-        cerebro.broker.set_cash(10000)
-        results = cerebro.run()
-        strat = results[0]
-        last_signal = get_last_signal(strat)
-        if last_signal is None:
-            last_signal = fallback_signal(data)
-        if last_signal == 1:
-            return symbol
     return None
 
 
@@ -383,7 +404,23 @@ if menu == MENU_DASHBOARD:
             """,
             unsafe_allow_html=True
         )
-    st.markdown("<div style='margin-bottom:2em;'></div>", unsafe_allow_html=True)
+    # --- Trending ticker warning ---
+    trending_tickers = get_trending_tickers()
+    if not trending_tickers:
+        st.warning("No trending tickers available. Bot will use fallback tickers.")
+
+    # Check if any price data is available for trending/fallback tickers
+    import yfinance as yf
+    no_data_tickers = []
+    for symbol in trending_tickers:
+        try:
+            data = yf.download(symbol, period='7d', interval='5m', progress=False)
+            if data.empty:
+                no_data_tickers.append(symbol)
+        except Exception:
+            no_data_tickers.append(symbol)
+    if len(no_data_tickers) == len(trending_tickers):
+        st.error("No price data could be fetched for any trending or fallback ticker. Trading is paused for this run. Please check your internet connection, yfinance status, or try again later.")
 
     # --- Start/Stop Button for Bot ---
     if 'bot_running' not in st.session_state:
