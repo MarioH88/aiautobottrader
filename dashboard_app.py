@@ -1,18 +1,13 @@
-import time
-import threading
 import os
+import time
+import random
 import pandas as pd
 import streamlit as st
 from datetime import datetime
 import requests
-import yfinance as yf
-import backtrader as bt
 from dotenv import load_dotenv
 import alpaca_trade_api as tradeapi
 from bs4 import BeautifulSoup
-import random
-
-import ta  # For technical indicators in ML
 from scalping_breakout_strategy import detect_breakout, get_take_profit_stop_loss
 
 # --- Constants ---

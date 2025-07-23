@@ -10,8 +10,10 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     # MACD
     macd = ta.trend.macd(df['close'])
     macd_signal = ta.trend.macd_signal(df['close'])
+    macd_hist = macd - macd_signal
     df['macd'] = macd
     df['macd_signal'] = macd_signal
+    df['macd_hist'] = macd_hist
     # Bollinger Bands
     bb = ta.volatility.BollingerBands(df['close'], window=20)
     df['bb_high'] = bb.bollinger_hband()
