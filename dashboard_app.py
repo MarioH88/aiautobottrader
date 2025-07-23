@@ -36,7 +36,7 @@ BOT_LOGS_LABEL = "Bot Logs"
 # --- Alpaca API Setup ---
 ALPACA_API_KEY = os.getenv("APCA_API_KEY_ID")
 ALPACA_SECRET_KEY = os.getenv("APCA_API_SECRET_KEY")
-ALPACA_BASE_URL = os.getenv("APCA_API_BASE_URL", "https://paper-api.alpaca.markets")
+ALPACA_BASE_URL = os.getenv("APCA_API_BASE_URL", "https://api.alpaca.markets")
 api = tradeapi.REST(ALPACA_API_KEY, ALPACA_SECRET_KEY, ALPACA_BASE_URL, api_version='v2')
 
 # --- Data Functions ---
@@ -100,7 +100,7 @@ body {background-color: #111; color: #fff; font-family: 'Segoe UI', 'Roboto', Ar
 </style>
 """, unsafe_allow_html=True)
 
-st.info("This dashboard is a template. Connect it to your live trading bot and logs for real-time monitoring.")
+st.info("This dashboard is for monitor. Connect it to your live trading bot and logs for real-time monitoring.")
 
 
 
