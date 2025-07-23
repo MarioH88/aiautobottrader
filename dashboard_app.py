@@ -43,7 +43,7 @@ def get_account_info():
         'equity': float(acc.equity),
         'cash': float(acc.cash),
         'buying_power': float(acc.buying_power),
-        'last_update': acc.updated_at
+        'last_update': getattr(acc, 'last_equity_update', None)
     }
 
 def get_recent_trades():
