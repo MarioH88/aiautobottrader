@@ -1,6 +1,9 @@
+
+
+# --- Cleaned, single-version backtest.py ---
 import pandas as pd
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from historical_data import fetch_alpaca_history, fetch_yahoo_history
 from indicators import add_indicators
 from ml_predict import load_sklearn_model, predict_action
@@ -8,7 +11,6 @@ from tqdm import tqdm
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
-
 
 def _decide_action(row: pd.Series, features: pd.DataFrame, model: Optional[Any], position: int, rsi_buy: float, rsi_sell: float) -> int:
     """Decide trading action based on ML model or rule-based logic."""
@@ -111,8 +113,6 @@ def backtest(
         position, entry_price = _execute_trade(action, row, position, entry_price, trades, slippage, commission)
         # No-op if no trade, so position stays the same
     return pd.DataFrame(trades)
-
-from typing import Tuple
 
 def summarize_trades(trades: pd.DataFrame) -> Dict[str, float]:
     """Compute summary statistics for a trade log DataFrame."""
