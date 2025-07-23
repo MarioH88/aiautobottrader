@@ -240,6 +240,27 @@ body {background-color: #111; color: #fff; font-family: 'Segoe UI', 'Roboto', Ar
 .status-badge {display: inline-block; padding: 0.25em 0.7em; border-radius: 8px; font-weight: bold; background: #ff3333; color: #fff; margin-left: 0.5em;}
 .status-badge.green { background: #33ff33; color: #111; }
 .icon {font-size: 1.2em; margin-right: 0.3em; vertical-align: middle;}
+/* Card contrast improvements */
+.dashboard-card {
+  background: #181c20 !important;
+  border-radius: 18px !important;
+  box-shadow: 0 2px 12px #0006 !important;
+  padding: 1.2em 1em !important;
+  margin-bottom: 1em !important;
+  border-left: 6px solid #007BFF !important;
+  color: #f5f6fa !important;
+}
+.dashboard-card .card-title {
+  color: #b0b8c1 !important;
+  font-size: 1.1em !important;
+  font-weight: 600 !important;
+  margin-bottom: 0.2em !important;
+}
+.dashboard-card .card-value {
+  color: #33ff99 !important;
+  font-size: 1.5em !important;
+  font-weight: 700 !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -276,14 +297,28 @@ with st.sidebar:
 if menu == MENU_DASHBOARD:
     acc = get_account_info()
     st.markdown("<div style='margin-top:1.5em;'></div>", unsafe_allow_html=True)
-    card_style = lambda color: f"background: #fff; border-radius: 14px; box-shadow: 0 2px 8px #0001; padding: 1.2em 1em; margin-bottom: 1em; border-left: 6px solid {color}; cursor:pointer; transition: box-shadow 0.2s;"
     col1, col2, col4 = st.columns([1,1,1])
     with col1:
-        st.markdown(f"<div style='{card_style('#28a745')}' title='View Equity Details'><b>💰 Equity</b><br><span style='font-size:1.3em; color:#28a745;'>${acc['equity']:,}</span></div>", unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class='dashboard-card' title='View Equity Details'>
+            <div class='card-title'>💰 Equity</div>
+            <div class='card-value'>${acc['equity']:,}</div>
+        </div>
+        """, unsafe_allow_html=True)
     with col2:
-        st.markdown(f"<div style='{card_style('#007BFF')}' title='View Cash Details'><b>💵 Cash</b><br><span style='font-size:1.3em; color:#007BFF;'>${acc['cash']:,}</span></div>", unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class='dashboard-card' title='View Cash Details'>
+            <div class='card-title'>💵 Cash</div>
+            <div class='card-value'>${acc['cash']:,}</div>
+        </div>
+        """, unsafe_allow_html=True)
     with col4:
-        st.markdown(f"<div style='{card_style('#007BFF')}' title='Last Trade'><b>📈 Last Trade</b><br><span style='font-size:1.1em; color:#007BFF;'>None</span></div>", unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class='dashboard-card' title='Last Trade'>
+            <div class='card-title'>📈 Last Trade</div>
+            <div class='card-value'>None</div>
+        </div>
+        """, unsafe_allow_html=True)
     st.markdown("<div style='margin-bottom:2em;'></div>", unsafe_allow_html=True)
     # --- Live Trades Table on Dashboard ---
     st.subheader("Live Trades (Last 10)")
