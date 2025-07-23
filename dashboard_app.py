@@ -13,9 +13,42 @@ from bs4 import BeautifulSoup
 import random
 
 import ta  # For technical indicators in ML
+from scalping_breakout_strategy import detect_breakout, get_take_profit_stop_loss
 
 # --- Scheduler Thread Function (define before sidebar/menu) ---
 def run_bot_job():
+    # --- Scalping Breakout Strategy Integration ---
+    breakout_candidates = []
+    for symbol in affordable:
+        try:
+            bars = api.get_bars(symbol, '5Min', limit=30).df
+            if bars.empty or len(bars) < 21:
+                continue
+            if detect_breakout(bars):
+                breakout_candidates.append(symbol)
+        except Exception as e:
+            print(f"Breakout check failed for {symbol}: {e}")
+            continue
+    # If any breakout candidates, trade them with TP/SL
+    for symbol in breakout_candidates:
+        try:
+            price = float(api.get_latest_trade(symbol).price)
+            qty = round(cash / price, 3)
+            if qty < 0.01:
+                continue
+            tp, sl = get_take_profit_stop_loss(price, tp_pct=0.01, sl_pct=0.01)  # 1% TP/SL
+            # Place market buy
+            api.submit_order(symbol=symbol, qty=qty, side='buy', type='market', time_in_force='day')
+            # Place OCO (One Cancels Other) order for TP/SL if supported, else log
+            try:
+                api.submit_order(symbol=symbol, qty=qty, side='sell', type='limit', time_in_force='gtc', limit_price=tp)
+                api.submit_order(symbol=symbol, qty=qty, side='sell', type='stop', time_in_force='gtc', stop_price=sl)
+                print(f"Scalping breakout: Bought {qty} {symbol} at {price:.2f}, TP {tp:.2f}, SL {sl:.2f}")
+            except Exception as e:
+                print(f"Could not place TP/SL for {symbol}: {e}")
+        except Exception as e:
+            print(f"Scalping trade failed for {symbol}: {e}")
+    # Continue with existing AI/ML logic for remaining affordable tickers
     """Run the aggressive trading bot using a Backtrader SMA crossover strategy and Alpaca for live trading."""
     try:
         trending = get_trending_tickers()
@@ -76,7 +109,6 @@ def get_trending_tickers():
         except Exception as e:
             print(f"Webull trending ticker error: {e}")
             return None
-    """Get trending/most active US tickers using Finnhub API, fallback to Yahoo scrape, then fallback tickers."""
     now = datetime.now()
     cache_key = 'trending_tickers_cache'
     cache_time_key = 'trending_tickers_cache_time'
@@ -437,38 +469,80 @@ lottie_trading = load_lottieurl("https://assets2.lottiefiles.com/packages/lf20_t
 api_ok, api_error = check_api_connection()
 
 st.set_page_config(page_title="AI Automated Trading Bot Dashboard", layout="wide")
-# --- Custom CSS for Professional Look ---
+
+# --- Modern Professional Dark Mode CSS ---
 st.markdown("""
 <style>
-body {background-color: #111; color: #fff; font-family: 'Segoe UI', 'Roboto', Arial, sans-serif;}
-.stApp {background-color: #111;}
-.metric-card {background: #181818; border-radius: 16px; padding: 1.2em 1em; margin-bottom: 1em; box-shadow: 0 2px 8px #0002;}
-.stButton>button {background-color: #ff3333; color: #fff; border-radius: 8px; font-weight: bold;}
-.red-text { color: #ff3333 !important; }
-.green-text { color: #33ff33 !important; }
-.status-badge {display: inline-block; padding: 0.25em 0.7em; border-radius: 8px; font-weight: bold; background: #ff3333; color: #fff; margin-left: 0.5em;}
-.status-badge.green { background: #33ff33; color: #111; }
-.icon {font-size: 1.2em; margin-right: 0.3em; vertical-align: middle;}
-/* Card contrast improvements */
+body, .stApp {
+    background-color: #181a20 !important;
+    color: #f5f6fa !important;
+    font-family: 'Segoe UI', 'Roboto', Arial, sans-serif;
+}
+.stSidebar {
+    background: #1e2128 !important;
+    color: #f5f6fa !important;
+}
+.stButton>button {
+    background-color: #007BFF !important;
+    color: #fff !important;
+    border-radius: 8px !important;
+    font-weight: bold !important;
+    border: none !important;
+    box-shadow: 0 2px 8px #0002 !important;
+    transition: background 0.2s;
+}
+.stButton>button:hover {
+    background-color: #0056b3 !important;
+}
 .dashboard-card {
-  background: #181c20 !important;
-  border-radius: 18px !important;
-  box-shadow: 0 2px 12px #0006 !important;
-  padding: 1.2em 1em !important;
-  margin-bottom: 1em !important;
-  border-left: 6px solid #007BFF !important;
-  color: #f5f6fa !important;
+    background: #23272f !important;
+    border-radius: 18px !important;
+    box-shadow: 0 2px 12px #0006 !important;
+    padding: 1.2em 1em !important;
+    margin-bottom: 1em !important;
+    border-left: 6px solid #007BFF !important;
+    color: #f5f6fa !important;
 }
 .dashboard-card .card-title {
-  color: #b0b8c1 !important;
-  font-size: 1.1em !important;
-  font-weight: 600 !important;
-  margin-bottom: 0.2em !important;
+    color: #b0b8c1 !important;
+    font-size: 1.1em !important;
+    font-weight: 600 !important;
+    margin-bottom: 0.2em !important;
 }
 .dashboard-card .card-value {
-  color: #33ff99 !important;
-  font-size: 1.5em !important;
-  font-weight: 700 !important;
+    color: #33ff99 !important;
+    font-size: 1.5em !important;
+    font-weight: 700 !important;
+}
+.stDataFrame, .stTable {
+    background: #23272f !important;
+    color: #f5f6fa !important;
+    border-radius: 12px !important;
+}
+.stMarkdown, .stText, .stCaption {
+    color: #b0b8c1 !important;
+}
+.stRadio > div {
+    background: #23272f !important;
+    border-radius: 10px !important;
+    color: #f5f6fa !important;
+}
+.stExpanderHeader {
+    color: #33ff99 !important;
+}
+.stSlider > div {
+    color: #33ff99 !important;
+}
+.stAlert {
+    background: #23272f !important;
+    color: #ff3333 !important;
+    border-radius: 10px !important;
+}
+.stFooter {
+    color: #b0b8c1 !important;
+    font-size: 0.9em !important;
+    text-align: center !important;
+    margin-top: 2em !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -544,13 +618,22 @@ if menu == MENU_DASHBOARD:
     if not trending_tickers:
         st.warning("No trending tickers available. Bot will use fallback tickers.")
 
-    # Show all trending tickers being scraped
-    with st.expander("Show Trending Tickers Being Scraped", expanded=False):
-        if trending_tickers:
-            st.write(f"**{len(trending_tickers)} Trending Tickers:**")
-            st.write(", ".join(trending_tickers))
-        else:
-            st.info("No trending tickers found.")
+    # Show only top 10 trending tickers, rest hidden in expander
+    if trending_tickers:
+        import pandas as pd
+        def to_col_table(tickers, n_cols=4):
+            n = len(tickers)
+            n_rows = (n + n_cols - 1) // n_cols
+            data = {f"Ticker {i+1}": [tickers[i*n_rows + j] if i*n_rows + j < n else '' for j in range(n_rows)] for i in range(n_cols)}
+            return pd.DataFrame(data)
+
+        st.markdown("**Top 10 Trending Tickers:**")
+        st.dataframe(to_col_table(trending_tickers[:10], n_cols=4), use_container_width=True, hide_index=True)
+        if len(trending_tickers) > 10:
+            with st.expander(f"Show {len(trending_tickers)-10} More Tickers", expanded=False):
+                st.dataframe(to_col_table(trending_tickers[10:], n_cols=4), use_container_width=True, hide_index=True)
+    else:
+        st.info("No trending tickers found.")
 
 
 
