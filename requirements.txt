@@ -1,3 +1,4 @@
+streamlit-lottie           # Lottie animation support for Streamlit
 alpaca-trade-api>=3.0.0  # Alpaca API client
 backtrader                # Backtesting framework
 joblib                    # Model persistence
