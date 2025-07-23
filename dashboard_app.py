@@ -14,13 +14,54 @@ from bs4 import BeautifulSoup
 # --- Scheduler Thread Function (define before sidebar/menu) ---
 def run_bot_job():
     """Run the aggressive trading bot using a Backtrader SMA crossover strategy and Alpaca for live trading."""
-    symbols = ['AAPL', 'MSFT', 'GOOG', 'NVDA', 'TSLA']
     try:
-        best_symbol = find_first_buy_signal(symbols)
+        trending = get_trending_tickers()
+        best_symbol = find_first_buy_signal(trending)
         place_aggressive_trade(best_symbol)
     except Exception as e:
         print(f"Trade error: {e}")
     st.session_state['last_run'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+# --- Trending Tickers Scraper ---
+def get_trending_tickers():
+    """Scrape Yahoo Finance for trending/most active tickers."""
+    url = "https://finance.yahoo.com/most-active"
+    now = datetime.now()
+    # Use session_state to cache trending tickers for 15 minutes
+    cache_key = 'trending_tickers_cache'
+    cache_time_key = 'trending_tickers_cache_time'
+    cache_duration = 15 * 60  # 15 minutes in seconds
+    if (
+        cache_key in st.session_state and
+        cache_time_key in st.session_state and
+        (now - st.session_state[cache_time_key]).total_seconds() < cache_duration
+    ):
+        return st.session_state[cache_key]
+    try:
+        resp = requests.get(url, timeout=10)
+        if resp.status_code == 429:
+            print("Trending ticker scrape error: 429 Too Many Requests. Using last cached tickers if available.")
+            return st.session_state.get(cache_key, [])
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        table = soup.find('table')
+        if not table:
+            return []
+        tickers = []
+        for row in table.find_all('tr')[1:]:
+            cols = row.find_all('td')
+            if cols:
+                ticker = cols[0].get_text(strip=True)
+                if ticker.isalpha() and len(ticker) <= 5:
+                    tickers.append(ticker)
+        tickers = tickers[:10]  # Limit to top 10
+        st.session_state[cache_key] = tickers
+        st.session_state[cache_time_key] = now
+        return tickers
+    except Exception as e:
+        print(f"Trending ticker scrape error: {e}")
+        # On error, return last cached tickers if available
+        return st.session_state.get(cache_key, [])
 
 
 def find_first_buy_signal(symbols):
@@ -41,6 +82,7 @@ def find_first_buy_signal(symbols):
         except Exception:
             return 0
 
+    # Use only the provided dynamic trending tickers list
     for symbol in symbols:
         data = yf.download(symbol, period='30d', interval='15m')
         if data.empty:
@@ -342,6 +384,22 @@ if menu == MENU_DASHBOARD:
             unsafe_allow_html=True
         )
     st.markdown("<div style='margin-bottom:2em;'></div>", unsafe_allow_html=True)
+
+    # --- Start/Stop Button for Bot ---
+    if 'bot_running' not in st.session_state:
+        st.session_state['bot_running'] = False
+    colA, colB = st.columns(2)
+    with colA:
+        if not st.session_state['bot_running']:
+            if st.button('Start Bot', key='start_bot'):
+                st.session_state['bot_running'] = True
+                run_bot_job()
+        else:
+            if st.button('Stop Bot', key='stop_bot'):
+                st.session_state['bot_running'] = False
+    with colB:
+        st.write(f"Bot status: {'🟢 Running' if st.session_state['bot_running'] else '🔴 Stopped'}")
+
     # --- Live Trades Table on Dashboard ---
     st.subheader("Live Trades (Last 10)")
     trades_df = get_recent_trades(max_trades=10)
@@ -352,43 +410,7 @@ if menu == MENU_DASHBOARD:
 
 elif menu == MENU_SCHEDULER:
     st.header("⏱ Scheduler")
-    if 'scheduler_running' not in st.session_state:
-        st.session_state['scheduler_running'] = False
-    if 'last_run' not in st.session_state:
-        st.session_state['last_run'] = 'Never'
-    if 'scheduled_time' not in st.session_state:
-        st.session_state['scheduled_time'] = None
-    st.markdown("<b>📅 Select Start Date</b>", unsafe_allow_html=True)
-    start_date = st.date_input("", value=datetime.now().date(), key="start_calendar_date")
-    st.markdown("<b>⏰ Select Start Time</b>", unsafe_allow_html=True)
-    start_time = st.time_input("", value=datetime.now().time().replace(second=0, microsecond=0), key="start_calendar_time")
-    start_dt = datetime.combine(start_date, start_time)
-    st.markdown("<b>📅 Select End Date</b>", unsafe_allow_html=True)
-    end_date = st.date_input("", value=datetime.now().date(), key="end_calendar_date")
-    st.markdown("<b>⏰ Select End Time</b>", unsafe_allow_html=True)
-    end_time = st.time_input("", value=datetime.now().time().replace(second=0, microsecond=0), key="end_calendar_time")
-    end_dt = datetime.combine(end_date, end_time)
-    st.write(f"Start: <b>{start_dt.strftime('%Y-%m-%d %H:%M:%S')}</b>", unsafe_allow_html=True)
-    st.write(f"End: <b>{end_dt.strftime('%Y-%m-%d %H:%M:%S')}</b>", unsafe_allow_html=True)
-    colA, colB = st.columns(2)
-    with colA:
-        if not st.session_state['scheduler_running']:
-            if st.button("Schedule Bot Run"):
-                st.session_state['scheduler_running'] = True
-                st.session_state['scheduled_time'] = start_dt
-                st.session_state['end_time'] = end_dt
-                threading.Thread(target=scheduler_thread, args=(start_dt,), daemon=True).start()
-        else:
-            if st.button("Cancel Scheduled Run"):
-                st.session_state['scheduler_running'] = False
-                st.session_state['scheduled_time'] = None
-                st.session_state['end_time'] = None
-    with colB:
-        st.write(f"Last run: {st.session_state['last_run']}")
-    if st.session_state['scheduler_running']:
-        st.success(f"Bot scheduled for {st.session_state['scheduled_time']} (End: {st.session_state['end_time']})")
-    else:
-        st.info("No scheduled run.")
+    st.info("Manual Start/Stop is now available on the Dashboard. Scheduler is disabled.")
 
 elif menu == MENU_SETTINGS:
     st.header("⚙️ Settings")
