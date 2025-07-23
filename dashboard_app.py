@@ -216,14 +216,15 @@ def find_first_buy_signal(symbols):
 
 def place_aggressive_trade(symbol, price_override=None):
     def _place(symbol, qty):
+        tif = 'day' if qty % 1 != 0 else 'gtc'
         api.submit_order(
             symbol=symbol,
             qty=qty,
             side='buy',
             type='market',
-            time_in_force='gtc'
+            time_in_force=tif
         )
-        print(f"Placed market buy order for {qty} shares of {symbol}.")
+        print(f"Placed market buy order for {qty} shares of {symbol} (TIF: {tif}).")
 
     if not symbol:
         print("No buy signal found for any symbol. Skipping trade.")
@@ -519,6 +520,8 @@ if menu == MENU_DASHBOARD:
             st.write(", ".join(trending_tickers))
         else:
             st.info("No trending tickers found.")
+
+
 
     # No yfinance check needed; Alpaca data is used for all signals and trading
 
