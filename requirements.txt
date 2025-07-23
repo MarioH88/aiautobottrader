@@ -17,3 +17,7 @@ scikit-learn>=1.4.0      # Machine learning library
 websocket-client>=1.6.0   # WebSocket client for Python
 alpaca-py>=0.13.0        # Alpaca Python SDK
 prophet
+textblob
+beautifulsoup4
+webull
+robin_stocks
