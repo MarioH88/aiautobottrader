@@ -1,0 +1,17 @@
+alpaca-trade-api>=3.0.0  # Alpaca API client
+backtrader                # Backtesting framework
+joblib                    # Model persistence
+pandas                    # Data analysis
+pandas-ta                 # Technical analysis indicators
+python-dotenv>=1.0.0     # Environment variable management
+schedule                  # Task scheduling
+streamlit>=1.30.0        # Dashboard UI
+tqdm                      # Progress bars
+yfinance                  # Yahoo Finance data
+ta>=0.11.0                # Technical analysis library
+requests>=2.31.0          # HTTP library
+matplotlib>=3.8.0         # Plotting library
+plotly>=5.20.0            # Interactive plotting library
+scikit-learn>=1.4.0      # Machine learning library
+websocket-client>=1.6.0   # WebSocket client for Python
+alpaca-py>=0.13.0        # Alpaca Python SDK
