@@ -1,20 +1,65 @@
 import time
+import yfinance as yf
+import backtrader as bt
+
 # --- Scheduler Thread Function (define before sidebar/menu) ---
 def run_bot_job():
-    # AGGRESSIVE MODE: The bot will always use the most aggressive trading logic.
-    # The aim is to double the account balance as quickly as possible (extremely high risk).
-    # Example: Use all available cash for each trade, no diversification, high leverage if available, and trade frequently.
-    # RISK MANAGEMENT: Prevent negative account balance by checking available cash before every trade.
-    # You should implement your aggressive trading logic here or call your aggressive trading function.
-    # Example risk check (pseudo-code):
-    # acc = api.get_account()
-    # if float(acc.cash) > 0:
-    #     # Place trade, but never for more than acc.cash
-    #     ...
-    # else:
-    #     # Do not place trade, log warning
-    #     print("Insufficient cash, skipping trade to prevent negative balance.")
-    # aggressive_trading_strategy(api)
+    """Run the aggressive trading bot using a Backtrader SMA crossover strategy and Alpaca for live trading."""
+    symbols = ['AAPL', 'MSFT', 'GOOG', 'NVDA', 'TSLA']
+    best_symbol = None
+    try:
+        class SmaCross(bt.SignalStrategy):
+            def __init__(self):
+                sma1 = bt.ind.SMA(period=10)
+                sma2 = bt.ind.SMA(period=30)
+                self.signal_add(bt.SIGNAL_LONG, bt.ind.CrossOver(sma1, sma2))
+
+        # Find first symbol with a buy signal
+        for symbol in symbols:
+            data = yf.download(symbol, period='30d', interval='15m')
+            if data.empty:
+                continue
+            data_bt = bt.feeds.PandasData(dataname=data)
+            cerebro = bt.Cerebro()
+            cerebro.addstrategy(SmaCross)
+            cerebro.adddata(data_bt)
+            cerebro.broker.set_cash(10000)
+            results = cerebro.run()
+            strat = results[0]
+            # Try to get last signal from Backtrader
+            last_signal = None
+            if hasattr(strat, 'signals') and len(strat.signals) > 0:
+                last_signal = strat.signals[-1]
+            # Fallback: check if last close > SMA(10)
+            if last_signal is None:
+                try:
+                    last_signal = 1 if data['Close'][-1] > data['Close'].rolling(10).mean()[-1] else 0
+                except Exception:
+                    last_signal = 0
+            if last_signal == 1:
+                best_symbol = symbol
+                break
+        # Place trade if a buy signal was found
+        if best_symbol:
+            acc = api.get_account()
+            price = float(api.get_last_trade(best_symbol).price)
+            cash = float(acc.cash)
+            qty = int(cash // price)
+            if qty > 0:
+                api.submit_order(
+                    symbol=best_symbol,
+                    qty=qty,
+                    side='buy',
+                    type='market',
+                    time_in_force='gtc'
+                )
+                print(f"Placed market buy order for {qty} shares of {best_symbol}.")
+            else:
+                print(f"Insufficient cash to buy {best_symbol}. Skipping trade.")
+        else:
+            print("No buy signal found for any symbol. Skipping trade.")
+    except Exception as e:
+        print(f"Trade error: {e}")
     st.session_state['last_run'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 import threading
 # --- Scheduler Thread Function (define before sidebar/menu) ---
@@ -313,12 +358,23 @@ if menu == MENU_DASHBOARD:
         </div>
         """, unsafe_allow_html=True)
     with col4:
-        st.markdown(f"""
-        <div class='dashboard-card' title='Last Trade'>
-            <div class='card-title'>📈 Last Trade</div>
-            <div class='card-value'>None</div>
-        </div>
-        """, unsafe_allow_html=True)
+        # Show last trade info if available, else show 'None'
+        last_trade = None
+        trades_df = get_recent_trades(max_trades=1)
+        if not trades_df.empty:
+            t = trades_df.iloc[0]
+            last_trade = f"{t['side'].capitalize()} {t['qty']} {t['symbol']} @ ${t['price']:.2f}"
+        else:
+            last_trade = "None"
+        st.markdown(
+            f"""
+            <div class='dashboard-card' title='Last Trade'>
+                <div class='card-title'>📈 Last Trade</div>
+                <div class='card-value'>{last_trade}</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
     st.markdown("<div style='margin-bottom:2em;'></div>", unsafe_allow_html=True)
     # --- Live Trades Table on Dashboard ---
     st.subheader("Live Trades (Last 10)")
