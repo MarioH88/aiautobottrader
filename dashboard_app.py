@@ -57,7 +57,6 @@ def get_bot_logs():
         '2025-07-23 09:00: Bot started.'
     ]
 
-st.markdown("""
 <style>
 body {
     background-color: #111;
@@ -85,6 +84,31 @@ section.main > div {
 </style>
 """, unsafe_allow_html=True)
 
+
+st.dataframe(get_recent_trades())
+st.subheader("Bot Logs")
+st.code('\n'.join(get_bot_logs()))
+
+# --- Demo Data (replace with real API calls in production) ---
+def get_positions():
+    return pd.DataFrame([
+        {'symbol': 'AAPL', 'qty': 10, 'avg_entry_price': 180.5, 'market_value': 1820.0},
+        {'symbol': 'TSLA', 'qty': 2, 'avg_entry_price': 700.0, 'market_value': 1450.0}
+    ])
+
+def get_recent_trades():
+    return pd.DataFrame([
+        {'time': '2025-07-23 10:00', 'symbol': 'AAPL', 'side': 'buy', 'price': 180.5, 'qty': 10},
+        {'time': '2025-07-23 09:30', 'symbol': 'TSLA', 'side': 'sell', 'price': 725.0, 'qty': 1}
+    ])
+
+def get_bot_logs():
+    return [
+        '2025-07-23 10:00: Bought 10 AAPL at $180.5',
+        '2025-07-23 09:30: Sold 1 TSLA at $725.0',
+        '2025-07-23 09:00: Bot started.'
+    ]
+
 st.subheader("Recent Trades")
 st.dataframe(get_recent_trades())
 st.subheader("Bot Logs")
@@ -107,6 +131,14 @@ with main2:
     with st.container():
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("Account Info")
+        # Replace with real account info from Alpaca API
+        acc = {
+            'status': 'ACTIVE',
+            'equity': 10000.00,
+            'cash': 5000.00,
+            'buying_power': 20000.00,
+            'last_update': '2025-07-23 10:00'
+        }
         st.write(f"**Status:** {acc['status']}")
         st.write(f"**Equity:** ${acc['equity']:,}")
         st.write(f"**Cash:** ${acc['cash']:,}")
@@ -119,10 +151,8 @@ with main2:
         st.code('\n'.join(get_bot_logs()))
         st.markdown('</div>', unsafe_allow_html=True)
 
-elif page == "Account":
-elif page == "Positions":
-elif page == "Trades":
-elif page == "Logs":
+
+
 
 # --- Sidebar Navigation (optional, can be expanded) ---
 with st.sidebar:
