@@ -10,27 +10,120 @@ import backtrader as bt
 from dotenv import load_dotenv
 import alpaca_trade_api as tradeapi
 from bs4 import BeautifulSoup
+import random
 
 # --- Scheduler Thread Function (define before sidebar/menu) ---
 def run_bot_job():
     """Run the aggressive trading bot using a Backtrader SMA crossover strategy and Alpaca for live trading."""
     try:
         trending = get_trending_tickers()
-        best_symbol = find_first_buy_signal(trending)
-        place_aggressive_trade(best_symbol)
+        acc = api.get_account()
+        cash = float(acc.cash)
+        affordable = []
+        prices = {}
+        for symbol in trending:
+            try:
+                price = float(api.get_latest_trade(symbol).price)
+                if price > 0 and cash >= price * 0.01:  # allow for fractional shares as low as $0.01
+                    affordable.append(symbol)
+                    prices[symbol] = price
+            except Exception:
+                continue
+        if not affordable:
+            print("No affordable tickers found with current cash. Skipping trade.")
+            st.session_state['last_run'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            return
+        best_symbol = find_first_buy_signal(affordable)
+        if best_symbol:
+            place_aggressive_trade(best_symbol, price_override=prices.get(best_symbol))
+        else:
+            print("No buy signal found for affordable tickers.")
+            st.session_state['last_run'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            return
     except Exception as e:
         print(f"Trade error: {e}")
     st.session_state['last_run'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
 # --- Trending Tickers Scraper ---
 def get_trending_tickers():
-    """Scrape Yahoo Finance for trending/most active tickers."""
-    url = "https://finance.yahoo.com/most-active"
+    """Get trending/most active US tickers using Finnhub API, fallback to Yahoo scrape, then fallback tickers."""
     now = datetime.now()
-    # Use session_state to cache trending tickers for 15 minutes
     cache_key = 'trending_tickers_cache'
     cache_time_key = 'trending_tickers_cache_time'
     cache_duration = 15 * 60  # 15 minutes in seconds
+
+    def get_flatfile_tickers():
+        import os
+        import pandas as pd
+        csv_path = os.path.join(os.getcwd(), "trending_tickers.csv")
+        if os.path.exists(csv_path):
+            try:
+                df = pd.read_csv(csv_path)
+                tickers = df['symbol'].dropna().astype(str).tolist()
+                tickers = [t.strip().upper() for t in tickers if t.strip()]
+                if tickers:
+                    return tickers[:10]
+            except Exception as e:
+                print(f"Error reading trending_tickers.csv: {e}")
+        return None
+
+    def get_fallback_tickers():
+        fallback = [
+            "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "BRK.B", "UNH", "V",
+            "JPM", "PG", "MA", "HD", "LLY", "PEP", "ABBV", "COST", "AVGO", "MRK",
+            "KO", "XOM", "WMT", "CVX", "BAC", "MCD", "DIS", "ADBE", "CSCO", "PFE",
+            "TMO", "ABT", "CMCSA", "ACN", "DHR", "LIN", "NKE", "TXN", "NEE", "WFC"
+        ]
+        random.shuffle(fallback)
+        return fallback
+
+    def get_polygon_tickers():
+        polygon_key = os.getenv("POLYGON_API_KEY")
+        if not polygon_key:
+            return None
+        try:
+            url = f"https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/actives?apiKey={polygon_key}"
+            resp = requests.get(url, timeout=10)
+            if resp.status_code == 401 or resp.status_code == 403:
+                print("Polygon API key is invalid, expired, or your plan does not allow access to this endpoint. Please check your Polygon.io subscription and API key.")
+                return None
+            resp.raise_for_status()
+            data = resp.json()
+            if 'tickers' in data and data['tickers']:
+                return [item['ticker'] for item in data['tickers'] if 'ticker' in item][:10]
+        except Exception as e:
+            print(f"Polygon trending ticker error: {e}")
+        return None
+
+    def get_yahoo_tickers():
+        try:
+            url = "https://finance.yahoo.com/most-active"
+            resp = requests.get(url, timeout=10)
+            if resp.status_code == 429:
+                print("Trending ticker scrape error: 429 Too Many Requests. Using last cached tickers if available.")
+                return None
+            resp.raise_for_status()
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            table = soup.find('table')
+            if not table:
+                tables = soup.find_all('table')
+                if tables:
+                    table = tables[0]
+            if not table:
+                return None
+            tickers = []
+            for row in table.find_all('tr')[1:]:
+                cols = row.find_all('td')
+                if cols:
+                    ticker = cols[0].get_text(strip=True)
+                    if (ticker.replace('.', '').isalpha() and len(ticker) <= 6):
+                        tickers.append(ticker)
+            return tickers[:10] if tickers else None
+        except Exception as e:
+            print(f"Trending ticker scrape error: {e}")
+            return None
+
+    # Check cache first
     if (
         cache_key in st.session_state and
         cache_time_key in st.session_state and
@@ -39,42 +132,33 @@ def get_trending_tickers():
         tickers = st.session_state[cache_key]
         if tickers:
             return tickers
-    # Fallback default tickers (S&P 500 top 10 by market cap)
-    # yfinance ticker format: BRK-B -> BRK.B
-    fallback_tickers = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "BRK.B", "UNH", "V"]
-    try:
-        resp = requests.get(url, timeout=10)
-        if resp.status_code == 429:
-            print("Trending ticker scrape error: 429 Too Many Requests. Using last cached tickers if available.")
-            tickers = st.session_state.get(cache_key, [])
-            if not tickers:
-                return fallback_tickers
-            return tickers
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        table = soup.find('table')
-        if not table:
-            return fallback_tickers
-        tickers = []
-        for row in table.find_all('tr')[1:]:
-            cols = row.find_all('td')
-            if cols:
-                ticker = cols[0].get_text(strip=True)
-                if ticker.isalpha() and len(ticker) <= 5:
-                    tickers.append(ticker)
-        tickers = tickers[:10]  # Limit to top 10
+
+    # Try flat file first
+    tickers = get_flatfile_tickers()
+    if tickers:
         st.session_state[cache_key] = tickers
         st.session_state[cache_time_key] = now
-        if not tickers:
-            return fallback_tickers
         return tickers
-    except Exception as e:
-        print(f"Trending ticker scrape error: {e}")
-        # On error, return last cached tickers if available, else fallback
-        tickers = st.session_state.get(cache_key, [])
-        if not tickers:
-            return fallback_tickers
+
+    # Try Polygon
+    tickers = get_polygon_tickers()
+    if tickers:
+        st.session_state[cache_key] = tickers
+        st.session_state[cache_time_key] = now
         return tickers
+
+    # Try Yahoo
+    tickers = get_yahoo_tickers()
+    if tickers:
+        st.session_state[cache_key] = tickers
+        st.session_state[cache_time_key] = now
+        return tickers
+
+    # Fallback
+    tickers = get_fallback_tickers()
+    st.session_state[cache_key] = tickers
+    st.session_state[cache_time_key] = now
+    return tickers
 
 
 def find_first_buy_signal(symbols):
@@ -91,21 +175,28 @@ def find_first_buy_signal(symbols):
 
     def fallback_signal(data):
         try:
-            return 1 if data['Close'][-1] > data['Close'].rolling(10).mean()[-1] else 0
+            return 1 if data['Close'].iloc[-1] > data['Close'].rolling(10).mean().iloc[-1] else 0
         except Exception:
             return 0
 
-    # Use only the provided dynamic trending tickers list
+    # Use Alpaca's data API for US stocks
     for symbol in symbols:
         try:
-            data = yf.download(symbol, period='30d', interval='15m', progress=False)
-            if data.empty:
-                # Try shorter period/interval if 30d/15m fails
-                data = yf.download(symbol, period='7d', interval='5m', progress=False)
-            if data.empty:
-                print(f"No data for {symbol}, skipping.")
+            # Fetch 30 days of 15-min bars (max 1000 bars per request)
+            bars = api.get_bars(symbol, '15Min', limit=1000).df
+            if bars.empty:
+                # Try 7 days of 5-min bars if 15-min is empty
+                bars = api.get_bars(symbol, '5Min', limit=1000).df
+            if bars.empty:
+                print(f"No Alpaca data for {symbol}, skipping.")
                 continue
-            data_bt = bt.feeds.PandasData(dataname=data)
+            # Rename columns to match Backtrader expectations
+            bars = bars.rename(columns={
+                'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'
+            })
+            # Backtrader expects datetime index
+            bars.index = pd.to_datetime(bars.index)
+            data_bt = bt.feeds.PandasData(dataname=bars)
             cerebro = bt.Cerebro()
             cerebro.addstrategy(SmaCross)
             cerebro.adddata(data_bt)
@@ -114,24 +205,17 @@ def find_first_buy_signal(symbols):
             strat = results[0]
             last_signal = get_last_signal(strat)
             if last_signal is None:
-                last_signal = fallback_signal(data)
+                last_signal = fallback_signal(bars)
             if last_signal == 1:
                 return symbol
         except Exception as e:
-            print(f"Failed to process {symbol}: {e}")
+            print(f"Failed to process {symbol} with Alpaca data: {e}")
             continue
     return None
 
 
-def place_aggressive_trade(symbol):
-    if not symbol:
-        print("No buy signal found for any symbol. Skipping trade.")
-        return
-    acc = api.get_account()
-    price = float(api.get_last_trade(symbol).price)
-    cash = float(acc.cash)
-    qty = int(cash // price)
-    if qty > 0:
+def place_aggressive_trade(symbol, price_override=None):
+    def _place(symbol, qty):
         api.submit_order(
             symbol=symbol,
             qty=qty,
@@ -140,6 +224,20 @@ def place_aggressive_trade(symbol):
             time_in_force='gtc'
         )
         print(f"Placed market buy order for {qty} shares of {symbol}.")
+
+    if not symbol:
+        print("No buy signal found for any symbol. Skipping trade.")
+        return
+    acc = api.get_account()
+    cash = float(acc.cash)
+    if price_override is not None:
+        price = price_override
+    else:
+        price = float(api.get_latest_trade(symbol).price)
+    # Fractional shares: use all available cash, round to 3 decimals
+    qty = round(cash / price, 3)
+    if qty >= 0.01:
+        _place(symbol, qty)
     else:
         print(f"Insufficient cash to buy {symbol}. Skipping trade.")
 import threading
@@ -409,18 +507,7 @@ if menu == MENU_DASHBOARD:
     if not trending_tickers:
         st.warning("No trending tickers available. Bot will use fallback tickers.")
 
-    # Check if any price data is available for trending/fallback tickers
-    import yfinance as yf
-    no_data_tickers = []
-    for symbol in trending_tickers:
-        try:
-            data = yf.download(symbol, period='7d', interval='5m', progress=False)
-            if data.empty:
-                no_data_tickers.append(symbol)
-        except Exception:
-            no_data_tickers.append(symbol)
-    if len(no_data_tickers) == len(trending_tickers):
-        st.error("No price data could be fetched for any trending or fallback ticker. Trading is paused for this run. Please check your internet connection, yfinance status, or try again later.")
+    # No yfinance check needed; Alpaca data is used for all signals and trading
 
     # --- Start/Stop Button for Bot ---
     if 'bot_running' not in st.session_state:
