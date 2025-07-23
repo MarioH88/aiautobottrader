@@ -4,8 +4,16 @@ def run_bot_job():
     # AGGRESSIVE MODE: The bot will always use the most aggressive trading logic.
     # The aim is to double the account balance as quickly as possible (extremely high risk).
     # Example: Use all available cash for each trade, no diversification, high leverage if available, and trade frequently.
+    # RISK MANAGEMENT: Prevent negative account balance by checking available cash before every trade.
     # You should implement your aggressive trading logic here or call your aggressive trading function.
-    # For demonstration, this is a placeholder:
+    # Example risk check (pseudo-code):
+    # acc = api.get_account()
+    # if float(acc.cash) > 0:
+    #     # Place trade, but never for more than acc.cash
+    #     ...
+    # else:
+    #     # Do not place trade, log warning
+    #     print("Insufficient cash, skipping trade to prevent negative balance.")
     # aggressive_trading_strategy(api)
     st.session_state['last_run'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 import threading
