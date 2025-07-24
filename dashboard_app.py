@@ -17,6 +17,109 @@ MENU_SCHEDULER = "⏰ Scheduler"
 MENU_SETTINGS = "⚙️ Settings"
 
 # --- Dummy implementations for missing functions (replace with real logic as needed) ---
+##########################
+# --- Trading Strategies ---
+##########################
+def breakout_strategy(market_data):
+    """Buy when price breaks key resistance with volume spike"""
+    if market_data['price'] > market_data['resistance'] and market_data['volume'] > market_data['avg_volume'] * 2:
+        return 'buy'
+    return None
+
+def momentum_strategy(market_data):
+    """Ride stocks with strong upward trends and positive momentum indicators"""
+    if market_data['momentum'] > 0.8:
+        return 'buy'
+    return None
+
+def mean_reversion_strategy(market_data):
+    """Buy undervalued stocks below moving average; sell when they revert"""
+    if market_data['price'] < market_data['moving_avg'] * 0.97:
+        return 'buy'
+    elif market_data['price'] > market_data['moving_avg'] * 1.03:
+        return 'sell'
+    return None
+
+def swing_trading_strategy(market_data):
+    """Enter trades at support/resistance levels; hold for several days to weeks"""
+    if market_data['price'] <= market_data['support']:
+        return 'buy'
+    elif market_data['price'] >= market_data['resistance']:
+        return 'sell'
+    return None
+
+def news_based_strategy(market_data):
+    """Trade based on earnings releases, product launches, or macroeconomic news"""
+    if market_data.get('news_event') == 'positive':
+        return 'buy'
+    elif market_data.get('news_event') == 'negative':
+        return 'sell'
+    return None
+
+def volume_spike_strategy(market_data):
+    """Enter trades when unusual volume suggests institutional activity"""
+    if market_data['volume'] > market_data['avg_volume'] * 3:
+        return 'buy'
+    return None
+
+def gap_and_go_strategy(market_data):
+    """Trade stocks that gap up at open and show continued strength"""
+    if market_data['gap_up'] and market_data['momentum'] > 0.7:
+        return 'buy'
+    return None
+
+def sentiment_technical_combo_strategy(market_data):
+    """Trade only when both sentiment and technicals align"""
+    if market_data['rsi'] < 30 and market_data['sentiment'] == 'bullish':
+        return 'buy'
+    return None
+
+# --- Strategy Selector ---
+def select_strategy(market_data):
+    """Select the best strategy based on market conditions"""
+    strategies = [
+        breakout_strategy,
+        momentum_strategy,
+        mean_reversion_strategy,
+        swing_trading_strategy,
+        news_based_strategy,
+        volume_spike_strategy,
+        gap_and_go_strategy,
+        sentiment_technical_combo_strategy
+    ]
+    for strategy in strategies:
+        action = strategy(market_data)
+        if action:
+            return strategy.__name__, action
+    return None, None
+
+# --- Public Strategy Cloning (Placeholder) ---
+def clone_public_strategy():
+    """Clone and simulate a public strategy from platforms like QuantConnect, TradingView, Alpaca GitHub."""
+    # Example: fetch strategy code via API or scrape, then simulate
+    # For now, returns a dummy action
+    return 'buy'
+
+# --- Signal Copying via API (Placeholder) ---
+def copy_trade_from_public_strategy():
+    """Subscribe to signals or copy trades from public strategies using broker API."""
+    # Example: Use Alpaca API to follow a trader's public strategy
+    # For now, returns a dummy action
+    return 'buy'
+
+# --- Social Sentiment Analysis (Placeholder) ---
+def analyze_social_sentiment(ticker):
+    """Scrape Reddit, X, Discord for ticker mentions and sentiment."""
+    # Example: Use NLP to analyze sentiment
+    # For now, returns a dummy sentiment
+    return {'mentions': 120, 'sentiment': 'bullish'}
+
+# --- Third-Party Signal Provider Integration (Placeholder) ---
+def get_third_party_signals():
+    """Integrate with TradingSignal API, TrendSpider, QuantSignals, etc."""
+    # Example: Fetch signals via API
+    # For now, returns a dummy signal
+    return {'signal': 'buy'}
 def get_account_info():
     # Load credentials from .env and fetch live account info from Alpaca
     from dotenv import load_dotenv
