@@ -571,107 +571,125 @@ st.markdown("""
 
 
 # --- Sidebar Navigation Menu (single version, all links) ---
+
+# --- Grouped and relabeled navigation ---
+MENU_SYSTEM = "🔧 System"
 MENU_DASHBOARD = "🏠 Dashboard"
 MENU_SCHEDULER = "⏱ Scheduler"
-MENU_LIVE_TRADES = "📊 Live Trades"
-MENU_BOT_LOGS = "📝 Bot Logs"
-MENU_REPORTS = "📤 Reports / Export"
-MENU_ACCOUNT = "👤 Account Info"
 MENU_SETTINGS = "⚙️ Settings"
-MENU_LIST = [MENU_DASHBOARD, MENU_SCHEDULER, MENU_LIVE_TRADES, MENU_BOT_LOGS, MENU_REPORTS, MENU_ACCOUNT, MENU_SETTINGS]
+MENU_TRADING = "📈 Trading"
+MENU_LIVE_TRADES = "📊 Live Trades"
+MENU_REPORTS = "📤 Reports & Exports"
+MENU_BOT_LOGS = "📝 Bot Logs"
+MENU_ACCOUNT = "👤 Account"
+MENU_ACCOUNT_INFO = "👤 Account Info"
+
+MENU_LIST = [
+    MENU_SYSTEM,
+    MENU_DASHBOARD,
+    MENU_SCHEDULER,
+    MENU_SETTINGS,
+    MENU_TRADING,
+    MENU_LIVE_TRADES,
+    MENU_REPORTS,
+    MENU_BOT_LOGS,
+    MENU_ACCOUNT,
+    MENU_ACCOUNT_INFO
+]
 with st.sidebar:
-    menu = st.radio("Navigation", MENU_LIST, index=0)
-    st.markdown("---")
+    acc = get_account_info()
+    st.markdown("""
+        <div style='line-height:1.7; margin-bottom:1em; padding:0.7em 0 0.2em 0;'>
+            <b>💰 Equity:</b> ${equity}<br>
+            <b>💵 Cash Available:</b> ${cash}
+        </div>
+    """.format(
+        equity=f"{float(acc['equity']):.2f}",
+        cash=f"{float(acc['cash']):.2f}"
+    ), unsafe_allow_html=True)
+
+    st.markdown("<b>Navigation</b>", unsafe_allow_html=True)
+    st.markdown("<hr style='margin:0.5em 0;'>", unsafe_allow_html=True)
+    menu = st.radio(" ", ["🏠 Dashboard", "⏱ Scheduler", "⚙️ Settings"], index=0, key="sysnav")
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("📈 <b>Trading</b>", unsafe_allow_html=True)
+    menu2 = st.radio("  ", ["📊 Live Trades", "📤 Reports & Exports", "📝 Bot Logs"], index=0, key="tradenav")
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("👤 <b>Account</b>", unsafe_allow_html=True)
+    menu3 = st.radio("   ", ["👤 Account", "👤 Account Info"], index=0, key="accnav")
+    st.markdown("<hr style='margin:0.5em 0;'>", unsafe_allow_html=True)
     st.write("Made with ❤️ for investors.")
-    st.markdown("---")
+    st.caption("Powered by AutoTrade AI")
+
+    # --- Bot Status Block at very bottom ---
+    bot_status = '🟢 Running' if st.session_state.get('bot_running', False) else '🔴 Stopped'
+    st.markdown("""
+        <div style='line-height:1.7; margin-top:1.5em; padding:0.7em 0 0.2em 0; border-top:1px solid #333;'>
+            <b>Bot Status:</b> {bot_status}
+        </div>
+    """.format(bot_status=bot_status), unsafe_allow_html=True)
 
 
 # --- Main Content Area (single version, all menu pages) ---
 
 if menu == MENU_DASHBOARD:
+
+    # --- 📊 Live Trades Section (now at top) ---
+    from trade_log import get_recent_trades_log
+    st.markdown("<h3>📊 Live Trades (Last 10)</h3>", unsafe_allow_html=True)
+    trades_df = get_recent_trades_log(10)
+    trades_df = trades_df.rename(columns={
+        'timestamp': 'Timestamp',
+        'symbol': 'Symbol',
+        'action': 'Action',
+        'price': 'Price',
+        'qty': 'Quantity',
+        'reason': 'Reason'
+    })
+    trades_df = trades_df[['Timestamp', 'Symbol', 'Action', 'Price', 'Quantity', 'Reason']]
+    st.dataframe(trades_df, use_container_width=True, hide_index=True)
+    auto_refresh = st.session_state.get('auto_refresh', True)
+    st.caption(f"[Auto-refresh: {'ON' if auto_refresh else 'OFF'}]")
+    st.markdown("<hr style='margin:1em 0;'>", unsafe_allow_html=True)
+
+    # --- Last Trade (below live trades) ---
     acc = get_account_info()
-    st.markdown("<div style='margin-top:1.5em;'></div>", unsafe_allow_html=True)
-    col1, col2, col4 = st.columns([1,1,1])
-    with col1:
-        st.markdown(f"""
-        <div class='dashboard-card' title='View Equity Details'>
-            <div class='card-title'>💰 Equity</div>
-            <div class='card-value'>${acc['equity']:,}</div>
+    trades_df_last = get_recent_trades(max_trades=1)
+    if not trades_df_last.empty:
+        t = trades_df_last.iloc[0]
+        last_trade = f"{t['side'].capitalize()} {t['qty']} {t['symbol']} @ ${t['price']:.2f}"
+    else:
+        last_trade = "None"
+    st.markdown(f"""
+        <div style='line-height:1.7;'>
+            <b>📈 Last Trade:</b> {last_trade}
         </div>
-        """, unsafe_allow_html=True)
-    with col2:
-        st.markdown(f"""
-        <div class='dashboard-card' title='View Cash Details'>
-            <div class='card-title'>💵 Cash</div>
-            <div class='card-value'>${acc['cash']:,}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with col4:
-        # Show last trade info if available, else show 'None'
-        last_trade = None
-        trades_df = get_recent_trades(max_trades=1)
-        if not trades_df.empty:
-            t = trades_df.iloc[0]
-            last_trade = f"{t['side'].capitalize()} {t['qty']} {t['symbol']} @ ${t['price']:.2f}"
-        else:
-            last_trade = "None"
-        st.markdown(
-            f"""
-            <div class='dashboard-card' title='Last Trade'>
-                <div class='card-title'>📈 Last Trade</div>
-                <div class='card-value'>{last_trade}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-    # --- Trending ticker warning ---
+    """, unsafe_allow_html=True)
+    st.markdown("<hr style='margin:1em 0;'>", unsafe_allow_html=True)
+
+    # --- Trending Tickers (below last trade) ---
     trending_tickers = get_trending_tickers()
-    if not trending_tickers:
-        st.warning("No trending tickers available. Bot will use fallback tickers.")
-
-    # Show only top 10 trending tickers, rest hidden in expander
+    st.markdown("<h3>🔥 Top 10 Trending Tickers</h3>", unsafe_allow_html=True)
     if trending_tickers:
-        import pandas as pd
-        def to_col_table(tickers, n_cols=4):
-            n = len(tickers)
-            n_rows = (n + n_cols - 1) // n_cols
-            data = {f"Ticker {i+1}": [tickers[i*n_rows + j] if i*n_rows + j < n else '' for j in range(n_rows)] for i in range(n_cols)}
-            return pd.DataFrame(data)
-
-        st.markdown("**Top 10 Trending Tickers:**")
-        st.dataframe(to_col_table(trending_tickers[:10], n_cols=4), use_container_width=True, hide_index=True)
+        badge_html = "<div style='display: flex; flex-wrap: wrap; gap: 0.5em 1em; margin-bottom: 1em;'>"
+        for i, ticker in enumerate(trending_tickers[:10]):
+            badge_html += f"<span style='background: #23272f; color: #33ff99; border-radius: 12px; padding: 0.5em 1.2em; font-weight: 600; font-size: 1.1em; margin-bottom: 0.3em; display: inline-block;'>{ticker}</span>"
+            if (i+1) % 4 == 0:
+                badge_html += "<br>"
+        badge_html += "</div>"
+        st.markdown(badge_html, unsafe_allow_html=True)
         if len(trending_tickers) > 10:
             with st.expander(f"Show {len(trending_tickers)-10} More Tickers", expanded=False):
-                st.dataframe(to_col_table(trending_tickers[10:], n_cols=4), use_container_width=True, hide_index=True)
+                more_badge_html = "<div style='display: flex; flex-wrap: wrap; gap: 0.5em 1em; margin-bottom: 1em;'>"
+                for i, ticker in enumerate(trending_tickers[10:]):
+                    more_badge_html += f"<span style='background: #23272f; color: #33ff99; border-radius: 12px; padding: 0.5em 1.2em; font-weight: 600; font-size: 1.1em; margin-bottom: 0.3em; display: inline-block;'>{ticker}</span>"
+                    if (i+1) % 4 == 0:
+                        more_badge_html += "<br>"
+                more_badge_html += "</div>"
+                st.markdown(more_badge_html, unsafe_allow_html=True)
     else:
         st.info("No trending tickers found.")
-
-
-
-    # No yfinance check needed; Alpaca data is used for all signals and trading
-
-    # --- Start/Stop Button for Bot ---
-    if 'bot_running' not in st.session_state:
-        st.session_state['bot_running'] = False
-    colA, colB = st.columns(2)
-    with colA:
-        if not st.session_state['bot_running']:
-            if st.button('Start Bot', key='start_bot'):
-                st.session_state['bot_running'] = True
-                run_bot_job()
-        else:
-            if st.button('Stop Bot', key='stop_bot'):
-                st.session_state['bot_running'] = False
-    with colB:
-        st.write(f"Bot status: {'🟢 Running' if st.session_state['bot_running'] else '🔴 Stopped'}")
-
-    # --- Live Trades Table on Dashboard ---
-    st.subheader("Live Trades (Last 10)")
-    trades_df = get_recent_trades(max_trades=10)
-    st.dataframe(trades_df, use_container_width=True)
-    st.caption("Showing last 10 trades. Table will auto-refresh if enabled.")
-
-
+    st.markdown("<hr style='margin:1em 0;'>", unsafe_allow_html=True)
 
 elif menu == MENU_SCHEDULER:
     st.header("⏱ Scheduler")

@@ -19,6 +19,14 @@ def log_trade(timestamp, symbol, action, price, qty, reason=None):
     df = pd.DataFrame([row])
     df.to_csv(LOG_FILE, mode='a', header=not log_exists, index=False)
 
+# Read the last N trades from the log for dashboard display
+
+def get_recent_trades_log(n=10):
+    if not os.path.isfile(LOG_FILE):
+        return pd.DataFrame(columns=['timestamp', 'symbol', 'action', 'price', 'qty', 'reason'])
+    df = pd.read_csv(LOG_FILE)
+    return df.tail(n)
+
 if __name__ == "__main__":
     # Example usage
     log_trade(datetime.now(), 'AAPL', 'buy', 200.0, 1, 'test buy')
