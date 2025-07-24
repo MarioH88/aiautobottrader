@@ -58,11 +58,13 @@ st.sidebar.markdown("""
 """, unsafe_allow_html=True)
 
 bot_running = st.session_state.get('bot_running', False)
-btn_label = 'Turn OFF' if bot_running else 'Turn ON'
 btn_class = "power-btn on" if bot_running else "power-btn"
-clicked = st.sidebar.button(btn_label, key="power_button")
-st.sidebar.markdown(f"""
-<button class='{btn_class}' style='pointer-events:none;'>
+
+# Use Streamlit's components.html to make the visual button clickable
+import streamlit.components.v1 as components
+
+power_button_html = f"""
+<button id='power-btn' class='{btn_class}'>
   <svg viewBox='0 0 24 24'>
     <path d='M12 2v10m0 0v10m0-10a8 8 0 1 1 8-8'/>
     <circle cx='12' cy='12' r='10' stroke='#fff' stroke-width='2' fill='none'/>
@@ -70,12 +72,33 @@ st.sidebar.markdown(f"""
   </svg>
 </button>
 <div style='text-align:center; font-weight:600; margin-top:0.5em;'>{'ON' if bot_running else 'OFF'}</div>
-""", unsafe_allow_html=True)
-if clicked:
+<script>
+  const btn = window.parent.document.getElementById('power-btn');
+  if (btn) {{
+    btn.onclick = function() {{
+      window.parent.postMessage({{type: 'power_toggle'}}, '*');
+    }};
+  }}
+</script>
+"""
+components.html(power_button_html, height=100)
+
+# Listen for power_toggle event using Streamlit's experimental get_query_params workaround
+if 'power_toggle' not in st.session_state:
+    st.session_state['power_toggle'] = False
+
+query_params = st.experimental_get_query_params()
+if 'power_toggle' in query_params:
+    st.session_state['power_toggle'] = True
+    # Remove the param so it doesn't trigger again
+    st.experimental_set_query_params()
+
+if st.session_state.get('power_toggle', False):
     bot_running = not bot_running
     st.session_state['bot_running'] = bot_running
     with open(FLAG_FILE, "w") as f:
         f.write("start" if bot_running else "stop")
+    st.session_state['power_toggle'] = False
 
 def trade_breakout_candidates(candidates, cash):
     for symbol in candidates:
