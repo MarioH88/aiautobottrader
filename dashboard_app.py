@@ -376,6 +376,7 @@ def check_api_connection():
 CARD_DIV_OPEN = '<div class="card" style="background: #181818; border-radius: 16px; box-shadow: 0 4px 24px #0003; padding: 1.5em 1em; margin-bottom: 1.5em;">'
 CARD_DIV_CLOSE = '</div>'
 BOT_LOGS_LABEL = "Bot Logs"
+HR_DIVIDER = "<hr style='margin:1em 0;'>"
 
 # --- Alpaca API Setup ---
 ALPACA_API_KEY = os.getenv("APCA_API_KEY_ID")
@@ -610,7 +611,7 @@ with st.sidebar:
 
     st.markdown("<b>Navigation</b>", unsafe_allow_html=True)
     st.markdown("<hr style='margin:0.5em 0;'>", unsafe_allow_html=True)
-    menu = st.radio(" ", ["🏠 Dashboard", "⏱ Scheduler", "⚙️ Settings"], index=0, key="sysnav")
+    menu = st.radio(" ", [MENU_DASHBOARD, MENU_SCHEDULER, MENU_SETTINGS], index=0, key="sysnav")
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("📈 <b>Trading</b>", unsafe_allow_html=True)
     menu2 = st.radio("  ", ["📊 Live Trades", "📤 Reports & Exports", "📝 Bot Logs"], index=0, key="tradenav")
@@ -650,7 +651,7 @@ if menu == MENU_DASHBOARD:
     st.dataframe(trades_df, use_container_width=True, hide_index=True)
     auto_refresh = st.session_state.get('auto_refresh', True)
     st.caption(f"[Auto-refresh: {'ON' if auto_refresh else 'OFF'}]")
-    st.markdown("<hr style='margin:1em 0;'>", unsafe_allow_html=True)
+    st.markdown(HR_DIVIDER, unsafe_allow_html=True)
 
     # --- Last Trade (below live trades) ---
     acc = get_account_info()
@@ -665,7 +666,7 @@ if menu == MENU_DASHBOARD:
             <b>📈 Last Trade:</b> {last_trade}
         </div>
     """, unsafe_allow_html=True)
-    st.markdown("<hr style='margin:1em 0;'>", unsafe_allow_html=True)
+    st.markdown(HR_DIVIDER, unsafe_allow_html=True)
 
     # --- Trending Tickers (below last trade) ---
     trending_tickers = get_trending_tickers()
@@ -689,10 +690,10 @@ if menu == MENU_DASHBOARD:
                 st.markdown(more_badge_html, unsafe_allow_html=True)
     else:
         st.info("No trending tickers found.")
-    st.markdown("<hr style='margin:1em 0;'>", unsafe_allow_html=True)
+    st.markdown(HR_DIVIDER, unsafe_allow_html=True)
 
 elif menu == MENU_SCHEDULER:
-    st.header("⏱ Scheduler")
+    st.header(MENU_SCHEDULER)
     st.info("Manual Start/Stop is now available on the Dashboard. Scheduler is disabled.")
 
 elif menu == MENU_SETTINGS:
