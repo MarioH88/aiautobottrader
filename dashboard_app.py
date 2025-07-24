@@ -679,10 +679,23 @@ if menu == MENU_DASHBOARD:
                 badge_html += "<br>"
         badge_html += "</div>"
         st.markdown(badge_html, unsafe_allow_html=True)
+
+        # --- Treding Tickers (next 6) ---
         if len(trending_tickers) > 10:
-            with st.expander(f"Show {len(trending_tickers)-10} More Tickers", expanded=False):
+            st.markdown("<h3>📈 Treding Tickers</h3>", unsafe_allow_html=True)
+            treding_html = "<div style='display: flex; flex-wrap: wrap; gap: 0.5em 1em; margin-bottom: 1em;'>"
+            for i, ticker in enumerate(trending_tickers[10:16]):
+                treding_html += f"<span style='background: #23272f; color: #ffcc00; border-radius: 12px; padding: 0.5em 1.2em; font-weight: 600; font-size: 1.1em; margin-bottom: 0.3em; display: inline-block;'>{ticker}</span>"
+                if (i+1) % 4 == 0:
+                    treding_html += "<br>"
+            treding_html += "</div>"
+            st.markdown(treding_html, unsafe_allow_html=True)
+
+        # Show remaining tickers in expander if any
+        if len(trending_tickers) > 16:
+            with st.expander(f"Show {len(trending_tickers)-16} More Tickers", expanded=False):
                 more_badge_html = "<div style='display: flex; flex-wrap: wrap; gap: 0.5em 1em; margin-bottom: 1em;'>"
-                for i, ticker in enumerate(trending_tickers[10:]):
+                for i, ticker in enumerate(trending_tickers[16:]):
                     more_badge_html += f"<span style='background: #23272f; color: #33ff99; border-radius: 12px; padding: 0.5em 1.2em; font-weight: 600; font-size: 1.1em; margin-bottom: 0.3em; display: inline-block;'>{ticker}</span>"
                     if (i+1) % 4 == 0:
                         more_badge_html += "<br>"
