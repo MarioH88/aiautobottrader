@@ -82,15 +82,17 @@ def get_moving_averages_and_rsi(symbol, short_window, long_window):
     if len(ohlcv_data[symbol]) >= long_window+15:
         df = pd.DataFrame(list(ohlcv_data[symbol]))
     else:
-        barset = api.get_bars(symbol, TimeFrame.Minute, limit=long_window+15)
-        df = barset.df[barset.df['symbol'] == symbol].copy()
+        bars = api.get_bars(symbol, TimeFrame.Minute, limit=long_window+15)
+        df = bars.df[bars.df['symbol'] == symbol].copy() if hasattr(bars, 'df') else pd.DataFrame()
+    if df.empty:
+        return df
     df['short_ma'] = df['close'].rolling(window=short_window).mean()
     df['long_ma'] = df['close'].rolling(window=long_window).mean()
     # RSI calculation
     delta = df['close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / loss
+    gain = delta.clip(lower=0).rolling(window=14).mean()
+    loss = -delta.clip(upper=0).rolling(window=14).mean()
+    rs = gain / loss.replace(0, 1)
     df['rsi'] = 100 - (100 / (1 + rs))
     return df
 
@@ -135,22 +137,17 @@ def handle_stop_loss_take_profit(entry_price, latest, trades_today):
     current_price = latest['close']
     stop_loss_price = entry_price * (1 - STOP_LOSS_PCT)
     take_profit_price = entry_price * (1 + TAKE_PROFIT_PCT)
+    reason = None
     if current_price <= stop_loss_price:
-        print(f"Stop-loss triggered at {current_price:.2f}. Selling {SYMBOL}.")
-        api.submit_order(symbol=SYMBOL, qty=QTY, side='sell', type='market', time_in_force='gtc')
-        log_trade(datetime.now(), SYMBOL, 'sell', current_price, QTY, 'stop-loss')
-        try:
-            send_discord(f"Stop-loss: Sold {SYMBOL} at {current_price:.2f}", DISCORD_WEBHOOK_URL)
-        except Exception:
-            pass
-        trades_today += 1
-        return True, trades_today
+        reason = 'stop-loss'
     elif current_price >= take_profit_price:
-        print(f"Take-profit triggered at {current_price:.2f}. Selling {SYMBOL}.")
+        reason = 'take-profit'
+    if reason:
+        print(f"{reason.replace('-', ' ').title()} triggered at {current_price:.2f}. Selling {SYMBOL}.")
         api.submit_order(symbol=SYMBOL, qty=QTY, side='sell', type='market', time_in_force='gtc')
-        log_trade(datetime.now(), SYMBOL, 'sell', current_price, QTY, 'take-profit')
+        log_trade(datetime.now(), SYMBOL, 'sell', current_price, QTY, reason)
         try:
-            send_discord(f"Take-profit: Sold {SYMBOL} at {current_price:.2f}", DISCORD_WEBHOOK_URL)
+            send_discord(f"{reason.replace('-', ' ').title()}: Sold {SYMBOL} at {current_price:.2f}", DISCORD_WEBHOOK_URL)
         except Exception:
             pass
         trades_today += 1
@@ -161,51 +158,47 @@ def handle_ml_trading(latest, position, trades_today):
     features = latest[['sma_20', 'ema_20', 'rsi_14', 'macd', 'macd_signal', 'bb_high', 'bb_low']].to_frame().T
     action = predict_action(model, features)
     if action == 1 and position == 0:
-        print(f"ML model: Buy signal for {SYMBOL}. Placing order...")
-        api.submit_order(symbol=SYMBOL, qty=QTY, side='buy', type='market', time_in_force='gtc')
-        log_trade(datetime.now(), SYMBOL, 'buy', latest['close'], QTY, 'ml-buy')
-        try:
-            send_discord(f"ML Buy: Bought {SYMBOL} at {latest['close']:.2f}", DISCORD_WEBHOOK_URL)
-        except Exception:
-            pass
-        trades_today += 1
+        trade_type = 'buy'
+        reason = 'ml-buy'
     elif action == -1 and position > 0:
-        print(f"ML model: Sell signal for {SYMBOL}. Placing order...")
-        api.submit_order(symbol=SYMBOL, qty=QTY, side='sell', type='market', time_in_force='gtc')
-        log_trade(datetime.now(), SYMBOL, 'sell', latest['close'], QTY, 'ml-sell')
-        try:
-            send_discord(f"ML Sell: Sold {SYMBOL} at {latest['close']:.2f}", DISCORD_WEBHOOK_URL)
-        except Exception:
-            pass
-        trades_today += 1
+        trade_type = 'sell'
+        reason = 'ml-sell'
     else:
         print("ML model: Hold signal. No trade.")
+        return trades_today
+    print(f"ML model: {trade_type.title()} signal for {SYMBOL}. Placing order...")
+    api.submit_order(symbol=SYMBOL, qty=QTY, side=trade_type, type='market', time_in_force='gtc')
+    log_trade(datetime.now(), SYMBOL, trade_type, latest['close'], QTY, reason)
+    try:
+        send_discord(f"ML {trade_type.title()}: {trade_type.title()} {SYMBOL} at {latest['close']:.2f}", DISCORD_WEBHOOK_URL)
+    except Exception:
+        pass
+    trades_today += 1
     return trades_today
 
 def handle_rule_trading(prev, latest, position, trades_today):
+    trade_type = None
+    reason = None
     if (
         prev['short_ma'] < prev['long_ma'] and
         latest['short_ma'] > latest['long_ma'] and
         latest['rsi'] < 70 and
         position == 0
     ):
-        print(f"Buy signal for {SYMBOL}. Placing order...")
-        api.submit_order(symbol=SYMBOL, qty=QTY, side='buy', type='market', time_in_force='gtc')
-        log_trade(datetime.now(), SYMBOL, 'buy', latest['close'], QTY, 'rule-buy')
-        try:
-            send_discord(f"Rule Buy: Bought {SYMBOL} at {latest['close']:.2f}", DISCORD_WEBHOOK_URL)
-        except Exception:
-            pass
-        trades_today += 1
+        trade_type = 'buy'
+        reason = 'rule-buy'
     elif (
         ((prev['short_ma'] > prev['long_ma'] and latest['short_ma'] < latest['long_ma']) or latest['rsi'] > 80)
         and position > 0
     ):
-        print(f"Sell signal for {SYMBOL}. Placing order...")
-        api.submit_order(symbol=SYMBOL, qty=QTY, side='sell', type='market', time_in_force='gtc')
-        log_trade(datetime.now(), SYMBOL, 'sell', latest['close'], QTY, 'rule-sell')
+        trade_type = 'sell'
+        reason = 'rule-sell'
+    if trade_type:
+        print(f"Rule {trade_type.title()} signal for {SYMBOL}. Placing order...")
+        api.submit_order(symbol=SYMBOL, qty=QTY, side=trade_type, type='market', time_in_force='gtc')
+        log_trade(datetime.now(), SYMBOL, trade_type, latest['close'], QTY, reason)
         try:
-            send_discord(f"Rule Sell: Sold {SYMBOL} at {latest['close']:.2f}", DISCORD_WEBHOOK_URL)
+            send_discord(f"Rule {trade_type.title()}: {trade_type.title()} {SYMBOL} at {latest['close']:.2f}", DISCORD_WEBHOOK_URL)
         except Exception:
             pass
         trades_today += 1
