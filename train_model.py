@@ -1,3 +1,4 @@
+model = RandomForestClassifier(random_state=42, min_samples_leaf=1, max_features='auto')
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 import joblib
@@ -13,7 +14,7 @@ X = df[['sma_20', 'ema_20', 'rsi_14', 'macd', 'macd_signal', 'bb_high', 'bb_low'
 y = df['target']
 
 # Train the model
-model = RandomForestClassifier()
+
 model.fit(X, y)
 
 # Save the model
