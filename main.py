@@ -266,16 +266,25 @@ def start_realtime_stream():
     stream.run()
 
 if __name__ == "__main__":
-    account = api.get_account()
-    print(f"Account status: {account.status}")
-    # Start real-time data in a separate thread if needed
-    stream_thread = threading.Thread(target=start_realtime_stream, daemon=True)
-    stream_thread.start()
-    # Schedule trading logic every 5 minutes
-    schedule.every(5).minutes.do(trade_logic)
-    print("Automated trading started. Running every 5 minutes.")
+    FLAG_FILE = "bot_control.flag"
+    print("Bot is ready for remote start/stop control.")
     while True:
-        schedule.run_pending()
-        time.sleep(1)
-        print("Waiting 1 minute before next check...")
-        time.sleep(60)
+        # Check flag file for start/stop command
+        if os.path.exists(FLAG_FILE):
+            with open(FLAG_FILE, "r") as f:
+                cmd = f.read().strip().lower()
+            if cmd == "start":
+                if not hasattr(threading.current_thread(), "bot_running") or not threading.current_thread().bot_running:
+                    print("Starting bot...")
+                    account = api.get_account()
+                    print(f"Account status: {account.status}")
+                    stream_thread = threading.Thread(target=start_realtime_stream, daemon=True)
+                    stream_thread.start()
+                    threading.current_thread().bot_running = True
+            elif cmd == "stop":
+                print("Stopping bot...")
+                threading.current_thread().bot_running = False
+                # Add any cleanup logic here if needed
+            else:
+                print(f"Unknown command in {FLAG_FILE}: {cmd}")
+        time.sleep(2)

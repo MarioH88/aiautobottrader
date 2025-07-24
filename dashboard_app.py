@@ -11,33 +11,71 @@ from bs4 import BeautifulSoup
 from scalping_breakout_strategy import detect_breakout, get_take_profit_stop_loss
 
 # --- Constants ---
+BADGE_DIV_OPEN = "<div style='display: flex; flex-wrap: wrap; gap: 0.5em 1em; margin-bottom: 1em;'>"
+BADGE_DIV_CLOSE = "</div>"
 HTML_PARSER = 'html.parser'
-def get_affordable_tickers(trending, cash, min_trade=1.0):
+def get_affordable_tickers(trending, api, cash, min_trade=1.0):
     affordable = []
     prices = {}
     for symbol in trending:
         try:
             price = float(api.get_latest_trade(symbol).price)
+            prices[symbol] = price
             if price >= min_trade and price <= cash:
                 affordable.append(symbol)
-                prices[symbol] = price
-        except Exception:
-            continue
-    return affordable, prices
-
-def get_breakout_candidates(affordable):
-    candidates = []
-    for symbol in affordable:
-        try:
-            bars = api.get_bars(symbol, '5Min', limit=30).df
-            if bars.empty or len(bars) < 21:
-                continue
-            if detect_breakout(bars):
-                candidates.append(symbol)
         except Exception as e:
-            print(f"Breakout check failed for {symbol}: {e}")
-            continue
-    return candidates
+            print(f"Error getting price for {symbol}: {e}")
+    return affordable, prices
+load_dotenv()
+
+# --- Start/Stop Button at the top of the navbar ---
+FLAG_FILE = "bot_control.flag"
+st.sidebar.markdown("""
+<style>
+.power-btn {
+  background: #23272f;
+  border: none;
+  border-radius: 50%;
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 1em auto;
+  box-shadow: 0 2px 8px #0003;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.power-btn.on {
+  background: #33ff99;
+}
+.power-btn svg {
+  width: 32px;
+  height: 32px;
+  fill: #fff;
+}
+</style>
+""", unsafe_allow_html=True)
+
+bot_running = st.session_state.get('bot_running', False)
+btn_label = 'Turn OFF' if bot_running else 'Turn ON'
+btn_class = "power-btn on" if bot_running else "power-btn"
+clicked = st.sidebar.button(btn_label, key="power_button")
+st.sidebar.markdown(f"""
+<button class='{btn_class}' style='pointer-events:none;'>
+  <svg viewBox='0 0 24 24'>
+    <path d='M12 2v10m0 0v10m0-10a8 8 0 1 1 8-8'/>
+    <circle cx='12' cy='12' r='10' stroke='#fff' stroke-width='2' fill='none'/>
+    <line x1='12' y1='6' x2='12' y2='12' stroke='#fff' stroke-width='2'/>
+  </svg>
+</button>
+<div style='text-align:center; font-weight:600; margin-top:0.5em;'>{'ON' if bot_running else 'OFF'}</div>
+""", unsafe_allow_html=True)
+if clicked:
+    bot_running = not bot_running
+    st.session_state['bot_running'] = bot_running
+    with open(FLAG_FILE, "w") as f:
+        f.write("start" if bot_running else "stop")
 
 def trade_breakout_candidates(candidates, cash):
     for symbol in candidates:
@@ -69,20 +107,14 @@ def run_bot_job():
             return
         acc = api.get_account()
         cash = float(acc.cash)
-        affordable, prices = get_affordable_tickers(trending, cash)
+        api = tradeapi.REST(os.getenv('APCA_API_KEY_ID'), os.getenv('APCA_API_SECRET_KEY'), os.getenv('APCA_API_BASE_URL'))
+        affordable, _ = get_affordable_tickers(trending, api, cash)
         if not affordable:
             print("No affordable tickers found with current cash. Skipping trade.")
             update_last_run()
             return
-        breakout_candidates = get_breakout_candidates(affordable)
-        trade_breakout_candidates(breakout_candidates, cash)
-        best_symbol = find_first_buy_signal(affordable)
-        if best_symbol:
-            place_aggressive_trade(best_symbol, price_override=prices.get(best_symbol))
-        else:
-            print("No buy signal found for affordable tickers.")
-            update_last_run()
-            return
+        # If you have a breakout candidate function, call it here. Otherwise, use affordable as candidates.
+        trade_breakout_candidates(affordable, cash)
         update_last_run()
     except Exception as e:
         print(f"Trade error: {e}")
@@ -672,34 +704,34 @@ if menu == MENU_DASHBOARD:
     trending_tickers = get_trending_tickers()
     st.markdown("<h3>🔥 Top 10 Trending Tickers</h3>", unsafe_allow_html=True)
     if trending_tickers:
-        badge_html = "<div style='display: flex; flex-wrap: wrap; gap: 0.5em 1em; margin-bottom: 1em;'>"
+        badge_html = BADGE_DIV_OPEN
         for i, ticker in enumerate(trending_tickers[:10]):
             badge_html += f"<span style='background: #23272f; color: #33ff99; border-radius: 12px; padding: 0.5em 1.2em; font-weight: 600; font-size: 1.1em; margin-bottom: 0.3em; display: inline-block;'>{ticker}</span>"
             if (i+1) % 4 == 0:
                 badge_html += "<br>"
-        badge_html += "</div>"
+        badge_html += BADGE_DIV_CLOSE
         st.markdown(badge_html, unsafe_allow_html=True)
 
         # --- Treding Tickers (next 6) ---
         if len(trending_tickers) > 10:
             st.markdown("<h3>📈 Treding Tickers</h3>", unsafe_allow_html=True)
-            treding_html = "<div style='display: flex; flex-wrap: wrap; gap: 0.5em 1em; margin-bottom: 1em;'>"
+            treding_html = BADGE_DIV_OPEN
             for i, ticker in enumerate(trending_tickers[10:16]):
                 treding_html += f"<span style='background: #23272f; color: #ffcc00; border-radius: 12px; padding: 0.5em 1.2em; font-weight: 600; font-size: 1.1em; margin-bottom: 0.3em; display: inline-block;'>{ticker}</span>"
                 if (i+1) % 4 == 0:
                     treding_html += "<br>"
-            treding_html += "</div>"
+            treding_html += BADGE_DIV_CLOSE
             st.markdown(treding_html, unsafe_allow_html=True)
 
         # Show remaining tickers in expander if any
         if len(trending_tickers) > 16:
             with st.expander(f"Show {len(trending_tickers)-16} More Tickers", expanded=False):
-                more_badge_html = "<div style='display: flex; flex-wrap: wrap; gap: 0.5em 1em; margin-bottom: 1em;'>"
+                more_badge_html = BADGE_DIV_OPEN
                 for i, ticker in enumerate(trending_tickers[16:]):
                     more_badge_html += f"<span style='background: #23272f; color: #33ff99; border-radius: 12px; padding: 0.5em 1.2em; font-weight: 600; font-size: 1.1em; margin-bottom: 0.3em; display: inline-block;'>{ticker}</span>"
                     if (i+1) % 4 == 0:
                         more_badge_html += "<br>"
-                more_badge_html += "</div>"
+                more_badge_html += BADGE_DIV_CLOSE
                 st.markdown(more_badge_html, unsafe_allow_html=True)
     else:
         st.info("No trending tickers found.")
