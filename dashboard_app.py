@@ -213,6 +213,7 @@ menu, menu2, menu3 = render_sidebar()
 # --- Main Content Area (single version, all menu pages) ---
 
 if menu == MENU_DASHBOARD:
+    # Manual Trade Controls removed
 
     # --- Dashboard Cards Section ---
     acc = get_account_info()
@@ -292,4 +293,11 @@ if menu == MENU_DASHBOARD:
     if not trades_df_last.empty:
         t = trades_df_last.iloc[0]
         last_trade = f"{t['side'].capitalize()} {t['qty']} {t['symbol']} @ ${t['price']:.2f}"
+        st.markdown(f"<b>Last Trade:</b> {last_trade}", unsafe_allow_html=True)
+    else:
+        st.markdown("<b>Last Trade:</b> No trades found.", unsafe_allow_html=True)
+
+# --- Streamlit main entry point ---
+if __name__ == "__main__":
+    st.set_page_config(page_title="AI AutoBot Trader Dashboard", layout="wide")
 
