@@ -23,8 +23,22 @@ HEADERS = {
 
 # --- Strategy Functions ---
 import pandas as pd
-from twitter_sentiment import get_twitter_sentiment
-from reddit_sentiment import get_reddit_sentiment
+
+
+def _get_twitter_sentiment(symbol, *args):
+    try:
+        from twitter_sentiment import get_twitter_sentiment
+        return get_twitter_sentiment(symbol, *args)
+    except ImportError:
+        return {'mentions': 0, 'bullish': 0, 'bearish': 0}
+
+
+def _get_reddit_sentiment(symbol, *args):
+    try:
+        from reddit_sentiment import get_reddit_sentiment
+        return get_reddit_sentiment(symbol, *args)
+    except ImportError:
+        return {'mentions': 0, 'bullish': 0, 'bearish': 0}
 
 def sector_rotation_strategy(factor_df, num_sectors=2):
     """Select top sectors by composite factor score and return buy signals."""
@@ -38,12 +52,12 @@ def sector_rotation_strategy(factor_df, num_sectors=2):
 
 def sentiment_strategy(symbol):
     """Combine Twitter and Reddit sentiment for a symbol."""
-    twitter = get_twitter_sentiment(symbol,
+    twitter = _get_twitter_sentiment(symbol,
         os.getenv('TWITTER_API_KEY'),
         os.getenv('TWITTER_API_KEY_SECRET'),
         os.getenv('TWITTER_ACCESS_TOKEN'),
         os.getenv('TWITTER_ACCESS_TOKEN_SECRET'))
-    reddit = get_reddit_sentiment(symbol,
+    reddit = _get_reddit_sentiment(symbol,
         os.getenv('REDDIT_CLIENT_ID'),
         os.getenv('REDDIT_CLIENT_SECRET'),
         os.getenv('REDDIT_USER_AGENT'))
@@ -159,9 +173,9 @@ def execute_trade(symbol, action, qty=1):
 
 # --- Main Trading Loop ---
 def get_market_data(symbol):
-    """Fetch market data for symbol (placeholder)"""
-    # Replace with real data fetching logic
+    """Fetch market data for symbol (placeholder)."""
     return {
+        'symbol': symbol,
         'price': 100,
         'resistance': 105,
         'support': 95,

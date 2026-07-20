@@ -1,29 +1,29 @@
+"""Technical indicator helpers using pandas-ta with pure-pandas fallback."""
+
+from __future__ import annotations
+
 import pandas as pd
-import ta
+
+from bot.indicators_ta import compute_rsi_macd
+
 
 def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
-    # Simple Moving Average
-    df['sma_20'] = ta.trend.sma_indicator(df['close'], window=20)
-    df['ema_20'] = ta.trend.ema_indicator(df['close'], window=20)
-    # RSI
-    df['rsi_14'] = ta.momentum.rsi(df['close'], window=14)
-    # MACD
-    macd = ta.trend.macd(df['close'])
-    macd_signal = ta.trend.macd_signal(df['close'])
-    macd_hist = macd - macd_signal
-    df['macd'] = macd
-    df['macd_signal'] = macd_signal
-    df['macd_hist'] = macd_hist
-    # Bollinger Bands
-    bb = ta.volatility.BollingerBands(df['close'], window=20)
-    df['bb_high'] = bb.bollinger_hband()
-    df['bb_low'] = bb.bollinger_lband()
-    return df
+    """Compute baseline technical features for backtesting compatibility.
 
-if __name__ == "__main__":
-    # Example usage
-    import yfinance as yf
-    data = yf.download('AAPL', period='1mo', interval='1d')
-    data = data.rename(columns={col: col.lower() for col in data.columns})
-    data = add_indicators(data)
-    print(data.tail())
+    Args:
+        df: OHLCV DataFrame with a lowercase ``close`` column.
+
+    Returns:
+        DataFrame enriched with RSI, MACD, and legacy column aliases.
+    """
+    enriched = compute_rsi_macd(df)
+    enriched["rsi_14"] = enriched["rsi"]
+    enriched["macd_signal"] = enriched["macd"].ewm(span=9, adjust=False).mean()
+    enriched["macd_hist"] = enriched["macd"] - enriched["macd_signal"]
+    enriched["sma_20"] = enriched["close"].rolling(20).mean()
+    enriched["ema_20"] = enriched["close"].ewm(span=20, adjust=False).mean()
+    enriched["bb_high"] = enriched["close"].rolling(20).mean() + 2 * enriched["close"].rolling(20).std()
+    enriched["bb_low"] = enriched["close"].rolling(20).mean() - 2 * enriched["close"].rolling(20).std()
+    if "sentiment_score" not in enriched.columns:
+        enriched["sentiment_score"] = 0.0
+    return enriched

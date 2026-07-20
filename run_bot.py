@@ -34,7 +34,11 @@ def main():
     api = tradeapi.REST(api_key, api_secret, base_url, api_version='v2')
 
     while True:
-        with open("bot_flag.txt") as f:
+        if not os.path.exists("bot_control.flag"):
+            print("Bot is stopped (no flag file).")
+            time.sleep(10)
+            continue
+        with open("bot_control.flag", encoding="utf-8") as f:
             flag = f.read().strip()
         if flag != "start":
             print("Bot is stopped.")

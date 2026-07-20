@@ -1,303 +1,754 @@
 import os
+import logging
+from datetime import timedelta, timezone
+
 import pandas as pd
-import streamlit as st
-from datetime import datetime
 import requests
+import streamlit as st
 from dotenv import load_dotenv
-import alpaca_trade_api as tradeapi
-from bs4 import BeautifulSoup
+from alpaca_trade_api.rest import REST
 
-from scalping_breakout_strategy import detect_breakout, get_take_profit_stop_loss
+load_dotenv()
 
-# --- Global Constants ---
-HR_DIVIDER = "<hr style='margin:1.5em 0;'>"
-FLAG_FILE = "bot_flag.txt"
-MENU_DASHBOARD = "🏠 Dashboard"
-MENU_SCHEDULER = "⏰ Scheduler"
-MENU_SETTINGS = "⚙️ Settings"
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("dashboard")
 
-# --- Dummy implementations for missing functions (replace with real logic as needed) ---
-##########################
-# --- Trading Strategies ---
-##########################
-def breakout_strategy(market_data):
-    """Buy when price breaks key resistance with volume spike"""
-    if market_data['price'] > market_data['resistance'] and market_data['volume'] > market_data['avg_volume'] * 2:
-        return 'buy'
-    return None
+from bot.flag_file import read_flag, write_flag
 
-def momentum_strategy(market_data):
-    """Ride stocks with strong upward trends and positive momentum indicators"""
-    if market_data['momentum'] > 0.8:
-        return 'buy'
-    return None
+FLAG_FILE = "bot_control.flag"
+MENU_DASHBOARD = "Dashboard"
+MENU_SCHEDULER = "Scheduler"
+MENU_SETTINGS = "Settings"
+THEME_LIGHT = "light"
+THEME_DARK = "dark"
+POPULAR_SYMBOLS = [
+    "AAPL", "TSLA", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "AMD", "NFLX", "SPY", "QQQ",
+]
 
-def mean_reversion_strategy(market_data):
-    """Buy undervalued stocks below moving average; sell when they revert"""
-    if market_data['price'] < market_data['moving_avg'] * 0.97:
-        return 'buy'
-    elif market_data['price'] > market_data['moving_avg'] * 1.03:
-        return 'sell'
-    return None
 
-def swing_trading_strategy(market_data):
-    """Enter trades at support/resistance levels; hold for several days to weeks"""
-    if market_data['price'] <= market_data['support']:
-        return 'buy'
-    elif market_data['price'] >= market_data['resistance']:
-        return 'sell'
-    return None
+def get_configured_symbols() -> list[str]:
+    """Return symbols the auto-bot watches from .env."""
+    raw = os.getenv("TRADING_SYMBOLS", "AAPL,TSLA")
+    return [symbol.strip().upper() for symbol in raw.split(",") if symbol.strip()]
 
-def news_based_strategy(market_data):
-    """Trade based on earnings releases, product launches, or macroeconomic news"""
-    if market_data.get('news_event') == 'positive':
-        return 'buy'
-    elif market_data.get('news_event') == 'negative':
-        return 'sell'
-    return None
 
-def volume_spike_strategy(market_data):
-    """Enter trades when unusual volume suggests institutional activity"""
-    if market_data['volume'] > market_data['avg_volume'] * 3:
-        return 'buy'
-    return None
+def get_tradeable_symbols() -> list[str]:
+    """Combine bot symbols, popular tickers, and trending names for the UI."""
+    symbols = set(get_configured_symbols())
+    symbols.update(POPULAR_SYMBOLS)
+    symbols.update(get_trending_tickers())
+    return sorted(symbols)
 
-def gap_and_go_strategy(market_data):
-    """Trade stocks that gap up at open and show continued strength"""
-    if market_data['gap_up'] and market_data['momentum'] > 0.7:
-        return 'buy'
-    return None
 
-def sentiment_technical_combo_strategy(market_data):
-    """Trade only when both sentiment and technicals align"""
-    if market_data['rsi'] < 30 and market_data['sentiment'] == 'bullish':
-        return 'buy'
-    return None
+def _theme_css(theme: str) -> str:
+    """Return modern CSS overrides for the selected theme."""
+    if theme == THEME_DARK:
+        tokens = {
+            "bg": "#070b12",
+            "bg2": "#0d1320",
+            "surface": "#121a2b",
+            "surface2": "#182236",
+            "border": "#243049",
+            "text": "#f1f5f9",
+            "muted": "#94a3b8",
+            "accent": "#818cf8",
+            "accent2": "#6366f1",
+            "success": "#34d399",
+            "danger": "#f87171",
+            "shadow": "0 8px 32px rgba(0,0,0,0.35)",
+            "hero": "linear-gradient(135deg, #1e1b4b 0%, #312e81 45%, #0f172a 100%)",
+        }
+    else:
+        tokens = {
+            "bg": "#f4f7fb",
+            "bg2": "#eef2f8",
+            "surface": "#ffffff",
+            "surface2": "#f8fafc",
+            "border": "#e2e8f0",
+            "text": "#0f172a",
+            "muted": "#64748b",
+            "accent": "#4f46e5",
+            "accent2": "#6366f1",
+            "success": "#059669",
+            "danger": "#dc2626",
+            "shadow": "0 8px 30px rgba(15,23,42,0.08)",
+            "hero": "linear-gradient(135deg, #eef2ff 0%, #f8fafc 55%, #ffffff 100%)",
+        }
 
-# --- Strategy Selector ---
-def select_strategy(market_data):
-    """Select the best strategy based on market conditions"""
-    strategies = [
-        breakout_strategy,
-        momentum_strategy,
-        mean_reversion_strategy,
-        swing_trading_strategy,
-        news_based_strategy,
-        volume_spike_strategy,
-        gap_and_go_strategy,
-        sentiment_technical_combo_strategy
-    ]
-    for strategy in strategies:
-        action = strategy(market_data)
-        if action:
-            return strategy.__name__, action
-    return None, None
+    return f"""
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
-# --- Public Strategy Cloning (Placeholder) ---
-def clone_public_strategy():
-    """Clone and simulate a public strategy from platforms like QuantConnect, TradingView, Alpaca GitHub."""
-    # Example: fetch strategy code via API or scrape, then simulate
-    # For now, returns a dummy action
-    return 'buy'
+        html, body, [class*="css"] {{
+            font-family: 'Inter', sans-serif;
+        }}
 
-# --- Signal Copying via API (Placeholder) ---
-def copy_trade_from_public_strategy():
-    """Subscribe to signals or copy trades from public strategies using broker API."""
-    # Example: Use Alpaca API to follow a trader's public strategy
-    # For now, returns a dummy action
-    return 'buy'
+        .stApp {{
+            background: radial-gradient(circle at top right, {tokens['bg2']} 0%, {tokens['bg']} 45%);
+            color: {tokens['text']};
+        }}
 
-# --- Social Sentiment Analysis (Placeholder) ---
-def analyze_social_sentiment(ticker):
-    """Scrape Reddit, X, Discord for ticker mentions and sentiment."""
-    # Example: Use NLP to analyze sentiment
-    # For now, returns a dummy sentiment
-    return {'mentions': 120, 'sentiment': 'bullish'}
+        .block-container {{
+            padding-top: 1.5rem;
+            max-width: 1200px;
+        }}
 
-# --- Third-Party Signal Provider Integration (Placeholder) ---
-def get_third_party_signals():
-    """Integrate with TradingSignal API, TrendSpider, QuantSignals, etc."""
-    # Example: Fetch signals via API
-    # For now, returns a dummy signal
-    return {'signal': 'buy'}
-def get_account_info():
-    # Load credentials from .env and fetch live account info from Alpaca
-    from dotenv import load_dotenv
-    import os
-    import alpaca_trade_api as tradeapi
-    load_dotenv()
+        [data-testid="stSidebar"] {{
+            background: {tokens['surface']};
+            border-right: 1px solid {tokens['border']};
+        }}
+
+        [data-testid="stSidebar"] > div:first-child {{
+            padding-top: 1rem;
+        }}
+
+        .sidebar-brand {{
+            padding: 1rem 0.25rem 0.5rem;
+        }}
+        .sidebar-brand h2 {{
+            margin: 0;
+            font-size: 1.15rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            color: {tokens['text']} !important;
+        }}
+        .sidebar-brand p {{
+            margin: 0.25rem 0 0;
+            font-size: 0.78rem;
+            color: {tokens['muted']} !important;
+        }}
+
+        .hero-banner {{
+            background: {tokens['hero']};
+            border: 1px solid {tokens['border']};
+            border-radius: 18px;
+            padding: 1.5rem 1.75rem;
+            margin-bottom: 1.25rem;
+            box-shadow: {tokens['shadow']};
+        }}
+        .hero-banner h1 {{
+            margin: 0;
+            font-size: 1.85rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            color: {tokens['text']} !important;
+        }}
+        .hero-banner p {{
+            margin: 0.35rem 0 0;
+            color: {tokens['muted']} !important;
+            font-size: 0.95rem;
+        }}
+
+        div[data-testid="stVerticalBlockBorderWrapper"] {{
+            background: {tokens['surface']};
+            border-color: {tokens['border']} !important;
+            border-radius: 16px !important;
+            box-shadow: {tokens['shadow']};
+            padding: 0.5rem 0.75rem;
+            margin-bottom: 0.75rem;
+        }}
+        .section-title {{
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: {tokens['muted']} !important;
+            margin: 0 0 0.75rem 0;
+        }}
+
+        .status-pill {{
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            padding: 0.35rem 0.75rem;
+            border-radius: 999px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            border: 1px solid {tokens['border']};
+            background: {tokens['surface2']};
+            color: {tokens['text']} !important;
+        }}
+        .status-dot {{
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }}
+
+        .ticker-chip {{
+            display: inline-block;
+            padding: 0.45rem 0.8rem;
+            margin: 0.2rem 0.35rem 0.2rem 0;
+            border-radius: 999px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            background: {tokens['surface2']};
+            border: 1px solid {tokens['border']};
+            color: {tokens['text']} !important;
+        }}
+
+        [data-testid="stMetric"] {{
+            background: {tokens['surface']};
+            border: 1px solid {tokens['border']};
+            border-radius: 14px;
+            padding: 0.85rem 1rem;
+            box-shadow: {tokens['shadow']};
+        }}
+        [data-testid="stMetricLabel"] {{
+            color: {tokens['muted']} !important;
+            font-size: 0.78rem !important;
+            font-weight: 600 !important;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }}
+        [data-testid="stMetricValue"] {{
+            color: {tokens['text']} !important;
+            font-weight: 700 !important;
+        }}
+
+        div[data-testid="stDataFrame"] {{
+            border: 1px solid {tokens['border']};
+            border-radius: 12px;
+            overflow: hidden;
+        }}
+
+        .stButton > button {{
+            border-radius: 10px;
+            font-weight: 600;
+            border: 1px solid {tokens['border']};
+            transition: all 0.15s ease;
+        }}
+        .stButton > button[kind="primary"] {{
+            background: linear-gradient(135deg, {tokens['accent2']} 0%, {tokens['accent']} 100%);
+            border: none;
+            color: white !important;
+        }}
+
+        .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {{
+            border-radius: 10px !important;
+        }}
+
+        hr {{
+            border: none;
+            border-top: 1px solid {tokens['border']} !important;
+            margin: 1rem 0 !important;
+        }}
+
+        h1, h2, h3, h4, label, p, span, .stCaption {{
+            color: {tokens['text']};
+        }}
+        .stCaption {{
+            color: {tokens['muted']} !important;
+        }}
+    </style>
+    """
+
+
+def _status_meta(status: str) -> tuple[str, str, str]:
+    """Return label, dot color, and pill class for bot status."""
+    mapping = {
+        "start": ("Live", "#34d399", "running"),
+        "stop": ("Stopped", "#94a3b8", "stopped"),
+        "emergency_stop": ("Emergency Halt", "#f87171", "halt"),
+    }
+    return mapping.get(status, ("Not Configured", "#fbbf24", "idle"))
+
+
+def render_hero(title: str, subtitle: str) -> None:
+    """Render a modern page hero banner."""
+    status = read_bot_status()
+    label, dot_color, _ = _status_meta(status)
+    st.markdown(
+        f"""
+        <div class="hero-banner">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;">
+                <div>
+                    <h1>{title}</h1>
+                    <p>{subtitle}</p>
+                </div>
+                <span class="status-pill">
+                    <span class="status-dot" style="background:{dot_color};"></span>
+                    {label}
+                </span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_in_card(title: str):
+    """Return a bordered container with a section title."""
+    container = st.container(border=True)
+    container.markdown(f'<p class="section-title">{title}</p>', unsafe_allow_html=True)
+    return container
+
+
+def init_theme() -> str:
+    """Initialize theme preference in session state."""
+    if "theme" not in st.session_state:
+        st.session_state.theme = THEME_LIGHT
+    return st.session_state.theme
+
+
+def apply_theme() -> None:
+    """Inject CSS for the active theme."""
+    st.markdown(_theme_css(st.session_state.theme), unsafe_allow_html=True)
+
+
+def render_theme_toggle() -> None:
+    """Sidebar control to switch between light and dark mode."""
+    st.sidebar.markdown("---")
+    st.sidebar.caption("Appearance")
+    choice = st.sidebar.radio(
+        "Theme",
+        options=[THEME_LIGHT, THEME_DARK],
+        format_func=lambda value: "Light" if value == THEME_LIGHT else "Dark",
+        horizontal=True,
+        index=0 if st.session_state.theme == THEME_LIGHT else 1,
+    )
+    st.session_state.theme = choice
+
+
+def init_popup_state() -> None:
+    """Track whether the author popup was dismissed this session."""
+    if "popup_dismissed" not in st.session_state:
+        st.session_state.popup_dismissed = False
+
+
+@st.dialog("AI AutoBot Trader")
+def author_popup() -> None:
+    """Startup popup — author: Mario Hayden."""
+    st.markdown("### Welcome")
+    st.caption("Your trading dashboard is ready.")
+    st.markdown("---")
+    st.markdown("Author: **Mario Hayden**")
+    if st.button("OK", type="primary", use_container_width=True):
+        st.session_state.popup_dismissed = True
+        st.rerun()
+
+
+def show_startup_popup() -> None:
+    """Show the author popup once when the app runs."""
+    if not st.session_state.popup_dismissed:
+        author_popup()
+
+
+@st.cache_resource
+def init_alpaca_api():
     api_key = os.getenv("APCA_API_KEY_ID")
     api_secret = os.getenv("APCA_API_SECRET_KEY")
-    base_url = os.getenv("APCA_API_BASE_URL")
-    api = tradeapi.REST(api_key, api_secret, base_url, api_version='v2')
-    account = api.get_account()
-    return {
-        'equity': float(account.equity),
-        'cash': float(account.cash)
-    }
+    base_url = os.getenv("APCA_API_BASE_URL", "https://paper-api.alpaca.markets")
+    if not api_key or not api_secret:
+        st.error("Missing Alpaca API credentials in .env")
+        return None
+    try:
+        api = REST(api_key, api_secret, base_url, api_version="v2")
+        _ = api.get_account()
+        return api
+    except Exception as e:
+        st.error(f"Failed to connect to Alpaca API: {e}")
+        logger.exception("Alpaca init failed")
+        return None
+
+
+def get_account_info():
+    api = init_alpaca_api()
+    if not api:
+        return {"equity": 0.0, "cash": 0.0, "buying_power": 0.0, "status": "disconnected"}
+    try:
+        acc = api.get_account()
+        return {
+            "equity": float(acc.equity),
+            "cash": float(acc.cash),
+            "buying_power": float(acc.buying_power),
+            "status": acc.status,
+        }
+    except Exception as e:
+        st.warning(f"Account info unavailable: {e}")
+        return {"equity": 0.0, "cash": 0.0, "buying_power": 0.0, "status": "error"}
+
+
+def get_positions():
+    api = init_alpaca_api()
+    if not api:
+        return []
+    try:
+        return api.list_positions()
+    except Exception as e:
+        st.warning(f"Positions unavailable: {e}")
+        return []
+
+
+def get_position_qty(symbol: str) -> float:
+    """Return held quantity for a symbol, or 0."""
+    symbol = symbol.upper()
+    for position in get_positions():
+        if position.symbol.upper() == symbol:
+            return float(position.qty)
+    return 0.0
+
+
+def fetch_live_prices(symbols: list[str]) -> pd.DataFrame:
+    """Fetch latest trade, bid/ask, and day change from Alpaca snapshots."""
+    api = init_alpaca_api()
+    if not api:
+        return pd.DataFrame()
+    unique = sorted({symbol.strip().upper() for symbol in symbols if symbol and symbol.strip()})
+    if not unique:
+        return pd.DataFrame()
+
+    rows: list[dict] = []
+    try:
+        snapshots = api.get_snapshots(unique)
+        for symbol in unique:
+            snap = snapshots.get(symbol)
+            if snap is None:
+                continue
+            price = float(snap.latest_trade.p) if snap.latest_trade else None
+            bid = float(snap.latest_quote.bp) if snap.latest_quote and snap.latest_quote.bp else None
+            ask = float(snap.latest_quote.ap) if snap.latest_quote and snap.latest_quote.ap else None
+            prev_close = float(snap.prev_daily_bar.c) if snap.prev_daily_bar else None
+            change_pct = None
+            if price is not None and prev_close:
+                change_pct = ((price - prev_close) / prev_close) * 100
+            updated = snap.latest_trade.t if snap.latest_trade else None
+            if updated is not None:
+                updated = updated.astimezone(timezone.utc).strftime("%H:%M:%S UTC")
+            rows.append(
+                {
+                    "Symbol": symbol,
+                    "Last": price,
+                    "Bid": bid,
+                    "Ask": ask,
+                    "Change %": change_pct,
+                    "Updated": updated or "—",
+                }
+            )
+    except Exception as exc:
+        logger.exception("Live price fetch failed")
+        st.warning(f"Live prices unavailable: {exc}")
+    return pd.DataFrame(rows)
+
+
+def _price_watchlist() -> list[str]:
+    """Build the symbol list for the live prices panel."""
+    symbols = set(get_configured_symbols())
+    symbols.update(POPULAR_SYMBOLS[:6])
+    symbols.update(get_trending_tickers()[:5])
+    for position in get_positions():
+        symbols.add(position.symbol.upper())
+    selected = st.session_state.get("manual_symbol")
+    if selected:
+        symbols.add(str(selected).upper())
+    custom = st.session_state.get("custom_symbol_input", "")
+    if custom.strip():
+        symbols.add(custom.strip().upper())
+    return sorted(symbols)
+
+
+@st.fragment(run_every=timedelta(seconds=10))
+def render_live_prices() -> None:
+    """Auto-refreshing live market price table."""
+    card = render_in_card("Live Market Prices")
+    with card:
+        st.caption("Updates every 10 seconds via Alpaca Market Data")
+        frame = fetch_live_prices(_price_watchlist())
+        if frame.empty:
+            st.info("No live prices available right now.")
+            return
+
+        display = frame.copy()
+        display["Last"] = display["Last"].map(lambda v: f"${v:,.2f}" if pd.notna(v) else "—")
+        display["Bid"] = display["Bid"].map(lambda v: f"${v:,.2f}" if pd.notna(v) else "—")
+        display["Ask"] = display["Ask"].map(lambda v: f"${v:,.2f}" if pd.notna(v) else "—")
+        display["Change %"] = display["Change %"].map(
+            lambda v: f"{v:+.2f}%" if pd.notna(v) else "—"
+        )
+        st.dataframe(display, use_container_width=True, hide_index=True)
+
+
+def show_symbol_live_price(symbol: str) -> None:
+    """Show a large live price readout for one symbol."""
+    frame = fetch_live_prices([symbol])
+    if frame.empty or frame.iloc[0]["Last"] is None:
+        st.caption("Live price unavailable")
+        return
+    row = frame.iloc[0]
+    price = row["Last"]
+    change = row["Change %"]
+    bid, ask = row["Bid"], row["Ask"]
+    c1, c2 = st.columns(2)
+    c1.metric("Live Price", f"${price:,.2f}")
+    if change is not None and pd.notna(change):
+        c2.metric("Day Change", f"{change:+.2f}%")
+    elif bid and ask:
+        c2.metric("Bid / Ask", f"${bid:,.2f} / ${ask:,.2f}")
+    else:
+        c2.metric("Updated", row["Updated"])
+
+
+@st.fragment(run_every=timedelta(seconds=10))
+def render_selected_symbol_price(symbol: str) -> None:
+    """Refresh live price for the manually selected symbol."""
+    show_symbol_live_price(symbol)
+
+
+def submit_manual_order(symbol: str, side: str, qty: float) -> tuple[bool, str]:
+    """Submit a market buy or sell order via Alpaca."""
+    api = init_alpaca_api()
+    if not api:
+        return False, "Alpaca API not connected"
+    symbol = symbol.strip().upper()
+    if not symbol:
+        return False, "Enter a valid symbol"
+    if qty <= 0:
+        return False, "Quantity must be greater than 0"
+    time_in_force = "day" if qty != int(qty) else "gtc"
+    try:
+        api.submit_order(
+            symbol=symbol,
+            qty=qty,
+            side=side,
+            type="market",
+            time_in_force=time_in_force,
+        )
+        return True, f"{side.upper()} order submitted: {qty} share(s) of {symbol}"
+    except Exception as exc:
+        logger.exception("Manual order failed")
+        return False, str(exc)
+
 
 def get_recent_trades():
-    # Replace with actual trade log retrieval logic
-    import pandas as pd
-    data = [
-        {'side': 'buy', 'qty': 10, 'symbol': 'AAPL', 'price': 195.23},
-        {'side': 'sell', 'qty': 5, 'symbol': 'TSLA', 'price': 265.10}
-    ]
-    return pd.DataFrame(data)
-
-
-# --- Constants ---
-BADGE_DIV_OPEN = "<div style='display: flex; flex-wrap: wrap; gap: 0.5em 1em; margin-bottom: 1em;'>"
-BADGE_DIV_CLOSE = "</div>"
-HTML_PARSER = 'html.parser'
-
-# --- Ticker fetch stub ---
-def get_affordable_tickers():
-    # Fetch trending tickers from Yahoo Finance (as an example)
-    import requests
-    try:
-        url = "https://query1.finance.yahoo.com/v1/finance/trending/US"
-        response = requests.get(url, timeout=5)
-        response.raise_for_status()
-        data = response.json()
-        symbols = [item['symbol'] for item in data.get('finance', {}).get('result', [])[0].get('quotes', [])]
-        return symbols
-    except Exception:
-        return []
-HTML_PARSER = 'html.parser'
-
-# --- Sidebar function (top-level, not nested) ---
-def render_sidebar():
-    # (Removed ticker block from sidebar)
-    bot_running = st.session_state.get('bot_running', False)
-    power_status = "ON" if bot_running else "OFF"
-    if st.sidebar.button(f"{'🟢' if bot_running else '🔴'} Power: {power_status}", key="power_btn", help="Toggle bot power"):
-        bot_running = not bot_running
-        st.session_state['bot_running'] = bot_running
-        with open(FLAG_FILE, "w") as f:
-            f.write("start" if bot_running else "stop")
-
-    acc = get_account_info()
-    st.sidebar.markdown(f"""
-<div style='line-height:1.7; margin-bottom:1em; padding:0.7em 0 0.2em 0;'>
-    <b>Equity:</b> ${float(acc['equity']):.2f}<br>
-    <b>Cash Available:</b> ${float(acc['cash']):.2f}
-</div>
-""", unsafe_allow_html=True)
-
-    st.sidebar.markdown("<b>Navigation</b>", unsafe_allow_html=True)
-    st.sidebar.markdown("<hr style='margin:0.5em 0;'>", unsafe_allow_html=True)
-    menu = st.sidebar.radio(" ", [MENU_DASHBOARD, MENU_SCHEDULER, MENU_SETTINGS], index=0, key="sysnav")
-    st.sidebar.markdown("<br>", unsafe_allow_html=True)
-    st.sidebar.markdown("📈 <b>Trading</b>", unsafe_allow_html=True)
-    menu2 = st.sidebar.radio("  ", ["📊 Live Trades", "📤 Reports & Exports", "📝 Bot Logs"], index=0, key="tradenav")
-    st.sidebar.markdown("<br>", unsafe_allow_html=True)
-    st.sidebar.markdown("👤 <b>Account</b>", unsafe_allow_html=True)
-    menu3 = st.sidebar.radio("   ", ["👤 Account", "👤 Account Info"], index=0, key="accnav")
-    st.sidebar.markdown("<hr style='margin:0.5em 0;'>", unsafe_allow_html=True)
-    st.sidebar.write("Made with ❤️ for investors.")
-    st.sidebar.caption("Powered by AutoTrade AI")
-
-    # --- Bot Status Block at very bottom ---
-    bot_status = '🟢 Running' if st.session_state.get('bot_running', False) else '🔴 Stopped'
-    st.sidebar.markdown(f"""
-<div style='line-height:1.7; margin-top:1.5em; padding:0.7em 0 0.2em 0; border-top:1px solid #333;'>
-    <b>Bot Status:</b> {bot_status}
-</div>
-""", unsafe_allow_html=True)
-    return menu, menu2, menu3
-
-menu, menu2, menu3 = render_sidebar()
-
-
-# --- Main Content Area (single version, all menu pages) ---
-
-if menu == MENU_DASHBOARD:
-    # Manual Trade Controls removed
-
-    # --- Dashboard Cards Section ---
-    acc = get_account_info()
-    trades_df_last = get_recent_trades()
-    if not trades_df_last.empty:
-        t = trades_df_last.iloc[0]
-        last_trade = f"{t['side'].capitalize()} {t['qty']} {t['symbol']} @ ${t['price']:.2f}"
-    else:
-        last_trade = "No trades found."
-
-    st.markdown("""
-<div style='display: flex; gap: 2em; margin-bottom: 2em;'>
-  <div style='background: #23272f; border-radius: 16px; box-shadow: 0 2px 8px #0002; padding: 1.5em 2em; min-width: 220px; text-align: left;'>
-    <span style='font-size:1.3em;'>🪙 <b>Equity</b></span><br>
-    <span style='color:#3cffb3; font-size:2em; font-weight:bold;'>${:.2f}</span>
-  </div>
-  <div style='background: #23272f; border-radius: 16px; box-shadow: 0 2px 8px #0002; padding: 1.5em 2em; min-width: 220px; text-align: left;'>
-    <span style='font-size:1.3em;'>💵 <b>Cash</b></span><br>
-    <span style='color:#3cffb3; font-size:2em; font-weight:bold;'>${:.2f}</span>
-  </div>
-  <div style='background: #23272f; border-radius: 16px; box-shadow: 0 2px 8px #0002; padding: 1.5em 2em; min-width: 220px; text-align: left;'>
-    <span style='font-size:1.3em;'>📈 <b>Last Trade</b></span><br>
-    <span style='color:#3cffb3; font-size:1.5em; font-weight:bold;'>{}</span>
-  </div>
-</div>
-    """.format(float(acc['equity']), float(acc['cash']), last_trade), unsafe_allow_html=True)
-
-    # --- Trending Tickers Table ---
-    tickers = get_affordable_tickers()
-    st.markdown("<h4 style='margin-top:0.5em;'>Top 10 Trending Tickers:</h4>", unsafe_allow_html=True)
-    if tickers:
-        # Display tickers in a 4-column table
-        cols = 4
-        rows = (len(tickers) + cols - 1) // cols
-        table_html = "<table style='width:100%;background:#23272f;border-radius:10px;'><tr>"
-        for i in range(cols):
-            table_html += f"<th style='color:#ccc;padding:0.5em;'>Ticker {i+1}</th>"
-        table_html += "</tr>"
-        for r in range(rows):
-            table_html += "<tr>"
-            for c in range(cols):
-                idx = r + rows * c
-                if idx < len(tickers):
-                    table_html += f"<td style='color:#fff;padding:0.5em;'>{tickers[idx]}</td>"
-                else:
-                    table_html += "<td></td>"
-            table_html += "</tr>"
-        table_html += "</table>"
-        st.markdown(table_html, unsafe_allow_html=True)
-    else:
-        st.info("No tickers found.")
-
-
-    # --- 📊 Live Trades Section (Last 10) ---
     try:
         from trade_log import get_recent_trades_log
-        trades_df = get_recent_trades_log(10)
-        trades_df = trades_df.rename(columns={
-            'timestamp': 'Timestamp',
-            'symbol': 'Symbol',
-            'action': 'Action',
-            'price': 'Price',
-            'qty': 'Quantity',
-            'reason': 'Reason'
-        })
-        trades_df = trades_df[['Timestamp', 'Symbol', 'Action', 'Price', 'Quantity', 'Reason']]
-        st.markdown("<h3>📊 Live Trades (Last 10)</h3>", unsafe_allow_html=True)
-        st.dataframe(trades_df, use_container_width=True, hide_index=True)
-    except Exception as e:
-        st.info(f"Live trades unavailable: {e}")
+        df = get_recent_trades_log(10)
+        return df if isinstance(df, pd.DataFrame) else pd.DataFrame(df)
+    except Exception:
+        return pd.DataFrame(columns=["timestamp", "symbol", "action", "price", "qty", "reason"])
 
-    st.markdown(HR_DIVIDER, unsafe_allow_html=True)
 
-    # --- Last Trade ---
+def get_trending_tickers():
+    try:
+        url = "https://query1.finance.yahoo.com/v1/finance/trending/US"
+        r = requests.get(url, timeout=8)
+        r.raise_for_status()
+        js = r.json()
+        quotes = js.get("finance", {}).get("result", [{}])[0].get("quotes", [])
+        symbols = [q.get("symbol") for q in quotes if q.get("symbol")]
+        return symbols[:10] if symbols else ["AAPL", "TSLA", "MSFT", "NVDA", "GOOGL"]
+    except Exception:
+        return ["AAPL", "TSLA", "MSFT", "NVDA", "GOOGL"]
+
+
+def read_bot_status():
+    return read_flag(FLAG_FILE) or "not_configured"
+
+
+def write_bot_status(status: str):
+    if write_flag(FLAG_FILE, status):
+        return True
+    st.error("Failed to write bot flag")
+    return False
+
+
+def render_sidebar():
+    st.sidebar.markdown(
+        """
+        <div class="sidebar-brand">
+            <h2>AutoBot Trader</h2>
+            <p>AI-powered execution desk</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    status = read_bot_status()
+    label, dot_color, _ = _status_meta(status)
+    st.sidebar.markdown(
+        f'<span class="status-pill"><span class="status-dot" style="background:{dot_color};"></span>{label}</span>',
+        unsafe_allow_html=True,
+    )
+
+    running = st.session_state.get("bot_running", False) or status == "start"
+    power_label = "Pause Bot" if running else "Start Bot"
+    if st.sidebar.button(power_label, type="primary", use_container_width=True):
+        running = not running
+        st.session_state["bot_running"] = running
+        write_bot_status("start" if running else "stop")
+
     acc = get_account_info()
-    trades_df_last = get_recent_trades()
-    if not trades_df_last.empty:
-        t = trades_df_last.iloc[0]
-        last_trade = f"{t['side'].capitalize()} {t['qty']} {t['symbol']} @ ${t['price']:.2f}"
-        st.markdown(f"<b>Last Trade:</b> {last_trade}", unsafe_allow_html=True)
-    else:
-        st.markdown("<b>Last Trade:</b> No trades found.", unsafe_allow_html=True)
+    st.sidebar.markdown("##### Portfolio")
+    st.sidebar.metric("Equity", f"${acc['equity']:,.2f}")
+    st.sidebar.metric("Cash", f"${acc['cash']:,.2f}")
+    st.sidebar.metric("Buying Power", f"${acc['buying_power']:,.2f}")
 
-# --- Streamlit main entry point ---
+    st.sidebar.markdown("---")
+    render_theme_toggle()
+    menu = st.sidebar.radio(
+        "Navigation",
+        [MENU_DASHBOARD, MENU_SCHEDULER, MENU_SETTINGS],
+        index=0,
+        format_func=lambda item: {"Dashboard": "Dashboard", "Scheduler": "Scheduler", "Settings": "Settings"}[item],
+    )
+    st.sidebar.markdown("---")
+    st.sidebar.caption("Author: Mario Hayden")
+    return menu
+
+
+def render_dashboard():
+    render_hero("Trading Dashboard", "Monitor positions, place orders, and control the auto-bot.")
+
+    acc = get_account_info()
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Portfolio", f"${acc['equity']:,.2f}")
+    k2.metric("Cash", f"${acc['cash']:,.2f}")
+    k3.metric("Buying Power", f"${acc['buying_power']:,.2f}")
+    k4.metric("Account", acc["status"].upper())
+
+    render_live_prices()
+
+    left, right = st.columns([1.05, 1], gap="large")
+
+    with left:
+        card = render_in_card("Bot Controls")
+        with card:
+            b1, b2, b3 = st.columns(3)
+            if b1.button("Start", type="primary", use_container_width=True):
+                write_bot_status("start")
+                st.session_state["bot_running"] = True
+                st.toast("Bot started", icon="✅")
+            if b2.button("Stop", use_container_width=True):
+                write_bot_status("stop")
+                st.session_state["bot_running"] = False
+                st.toast("Bot stopped", icon="⏸️")
+            if b3.button("Emergency", use_container_width=True):
+                write_bot_status("emergency_stop")
+                st.session_state["bot_running"] = False
+                st.toast("Emergency stop activated", icon="🛑")
+
+        configured = get_configured_symbols()
+        card = render_in_card("Manual Trade")
+        with card:
+            st.caption(f"Auto-bot watches: {', '.join(configured)}")
+            trade_symbols = get_tradeable_symbols()
+            symbol = st.selectbox("Symbol", trade_symbols, key="manual_symbol", label_visibility="collapsed")
+            custom_symbol = st.text_input(
+                "Custom symbol",
+                placeholder="Type any ticker, e.g. MSFT",
+                key="custom_symbol_input",
+            )
+            if custom_symbol.strip():
+                symbol = custom_symbol.strip().upper()
+
+            render_selected_symbol_price(symbol)
+
+            held_qty = get_position_qty(symbol)
+            q1, q2, q3, q4 = st.columns([1.2, 1, 1, 1])
+            with q1:
+                default_qty = max(held_qty, 1.0) if held_qty > 0 else 1.0
+                qty = st.number_input("Qty", min_value=0.01, value=float(default_qty), step=1.0)
+                if held_qty > 0:
+                    st.caption(f"Holding {held_qty:g} shares")
+            with q2:
+                if st.button("Buy", type="primary", use_container_width=True):
+                    ok, msg = submit_manual_order(symbol, "buy", qty)
+                    st.toast(msg, icon="✅" if ok else "⚠️")
+                    if not ok:
+                        st.error(msg)
+            with q3:
+                if st.button("Sell", use_container_width=True):
+                    sell_qty = held_qty if held_qty > 0 else qty
+                    ok, msg = submit_manual_order(symbol, "sell", sell_qty)
+                    st.toast(msg, icon="✅" if ok else "⚠️")
+                    if not ok:
+                        st.error(msg)
+            with q4:
+                if st.button("Sell All", use_container_width=True):
+                    if held_qty <= 0:
+                        st.warning(f"No {symbol} position")
+                    else:
+                        ok, msg = submit_manual_order(symbol, "sell", held_qty)
+                        st.toast(msg, icon="✅" if ok else "⚠️")
+                        if not ok:
+                            st.error(msg)
+
+        card = render_in_card("Trending")
+        with card:
+            chips = "".join(f'<span class="ticker-chip">{tk}</span>' for tk in get_trending_tickers()[:10])
+            st.markdown(chips, unsafe_allow_html=True)
+
+    with right:
+        card = render_in_card("Open Positions")
+        with card:
+            positions = get_positions()
+            if positions:
+                rows = []
+                for p in positions:
+                    pl = float(p.unrealized_pl)
+                    rows.append({
+                        "Symbol": p.symbol,
+                        "Qty": float(p.qty),
+                        "Entry": f"${float(p.avg_entry_price):.2f}",
+                        "Price": f"${float(p.current_price):.2f}",
+                        "Value": f"${float(p.market_value):,.2f}",
+                        "P&L": f"${pl:,.2f}",
+                        "P&L %": f"{float(p.unrealized_plpc) * 100:.2f}%",
+                    })
+                st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            else:
+                st.info("No open positions yet.")
+
+        card = render_in_card("Recent Trades")
+        with card:
+            trades = get_recent_trades()
+            if not trades.empty:
+                if "timestamp" in trades.columns:
+                    trades["timestamp"] = pd.to_datetime(trades["timestamp"]).dt.strftime("%Y-%m-%d %H:%M")
+                st.dataframe(trades.head(10), use_container_width=True, hide_index=True)
+            else:
+                st.info("No recent trades logged.")
+
+def render_settings():
+    render_hero("Settings", "Customize appearance and review bot configuration.")
+
+    card = render_in_card("Appearance")
+    with card:
+        st.write(f"Active theme: **{st.session_state.theme.title()}**")
+        st.caption("Use the sidebar Appearance toggle to switch light or dark mode.")
+
+    card = render_in_card("Auto-Bot Symbols")
+    with card:
+        symbols = get_configured_symbols()
+        st.write(", ".join(f"`{s}`" for s in symbols))
+        st.code(f"TRADING_SYMBOLS={','.join(symbols)}", language="bash")
+        st.caption("Update `.env` and restart `python main.py` to change auto-traded symbols.")
+
+
+def main():
+    st.set_page_config(
+        page_title="AI AutoBot Trader Dashboard",
+        page_icon="chart_with_upwards_trend",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
+    init_theme()
+    init_popup_state()
+    apply_theme()
+    api = init_alpaca_api()
+    if not api:
+        st.stop()
+    show_startup_popup()
+    menu = render_sidebar()
+    apply_theme()
+    if menu == MENU_DASHBOARD:
+        render_dashboard()
+    elif menu == MENU_SCHEDULER:
+        render_hero("Scheduler", "Automated run windows and cron-style triggers.")
+        st.info("Scheduler coming soon.")
+    elif menu == MENU_SETTINGS:
+        render_settings()
+
+
 if __name__ == "__main__":
-    st.set_page_config(page_title="AI AutoBot Trader Dashboard", layout="wide")
-
+    main()

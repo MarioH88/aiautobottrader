@@ -1,12 +1,10 @@
-
-
-# --- Cleaned, single-version backtest.py ---
 import pandas as pd
 import logging
+import os
 from typing import Optional, List, Dict, Any, Tuple
 from historical_data import fetch_alpaca_history, fetch_yahoo_history
 from indicators import add_indicators
-from ml_predict import load_sklearn_model, predict_action
+from ml_predict import FEATURE_COLUMNS, load_sklearn_model, predict_action
 from tqdm import tqdm
 
 # Configure logging
@@ -15,7 +13,12 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(mess
 def _decide_action(row: pd.Series, features: pd.DataFrame, model: Optional[Any], position: int, rsi_buy: float, rsi_sell: float) -> int:
     """Decide trading action based on ML model or rule-based logic."""
     if model is not None:
-        return predict_action(model, features)
+        pred = predict_action(model, features)
+        if pred == 1 and position == 0:
+            return 1
+        if pred == 0 and position > 0:
+            return -1
+        return 0
     rsi = row.get('rsi_14', 50)
     if rsi < rsi_buy and position == 0:
         return 1
@@ -76,7 +79,9 @@ def backtest(
     try:
         if use_yahoo:
             df = fetch_yahoo_history(symbol, interval='1m', period='5d')
-            df = df.rename(columns={col: col.lower() for col in df.columns})
+            if df.empty:
+                logging.warning("Yahoo data empty for %s, falling back to Alpaca", symbol)
+                df = fetch_alpaca_history(symbol, '1Min', limit)
         else:
             df = fetch_alpaca_history(symbol, '1Min', limit)
     except Exception as e:
@@ -104,7 +109,7 @@ def backtest(
         row = df.iloc[i]
         # Defensive: skip if any required indicator is missing or NaN
         try:
-            features = row[['sma_20', 'ema_20', 'rsi_14', 'macd', 'macd_signal', 'bb_high', 'bb_low']].to_frame().T
+            features = row[FEATURE_COLUMNS].to_frame().T
             if features.isnull().any().any():
                 continue
         except KeyError:
@@ -143,11 +148,10 @@ def save_trades(trades: pd.DataFrame, filename: str = "trades.csv") -> None:
         logging.info(f"Trades saved to {filename}")
 
 if __name__ == "__main__":
-    # Example usage: backtest AAPL with rule-based logic on Yahoo data
     trades = backtest(
         'AAPL',
-        model_path=None,
-        use_yahoo=True,
+        model_path='model.pkl' if os.path.exists('model.pkl') else None,
+        use_yahoo=False,
         limit=500,
         slippage=0.0005,
         commission=0.01,

@@ -12,8 +12,10 @@ def send_email(subject, body, to_email, from_email, smtp_server, smtp_port, smtp
         server.sendmail(from_email, [to_email], msg.as_string())
 
 def send_discord(message, webhook_url):
+    if not webhook_url:
+        return
     data = {"content": message}
-    requests.post(webhook_url, json=data)
+    requests.post(webhook_url, json=data, timeout=10)
 
 if __name__ == "__main__":
     # Example usage (fill in your details)

@@ -32,10 +32,13 @@ def get_reddit_sentiment(ticker, client_id, client_secret, user_agent):
 
 # Example usage:
 if __name__ == "__main__":
-    creds = {
-        'client_id': 'zuIz-O-Mm5OLyU14WaRbFpoTHh01qw',
-        'client_secret': 'YOUR_SECRET',
-        'user_agent': 'aiautobottrader/0.1 by YOUR_USERNAME'
-    }
-    result = get_reddit_sentiment('AAPL', **creds)
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+    result = get_reddit_sentiment(
+        'AAPL',
+        os.getenv('REDDIT_CLIENT_ID'),
+        os.getenv('REDDIT_CLIENT_SECRET'),
+        os.getenv('REDDIT_USER_AGENT'),
+    )
     print(result)

@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI AutoBot Trader — Project Completion Report</title>
+  <style>
+    :root {
+      --ink: #0f172a;
+      --muted: #475569;
+      --line: #e2e8f0;
+      --accent: #4f46e5;
+      --bg: #ffffff;
+      --code-bg: #0f172a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", Inter, Arial, sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+      line-height: 1.55;
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 40px 48px 64px;
+    }
+    h1, h2, h3 { letter-spacing: -0.02em; }
+    h1 { font-size: 2rem; margin-bottom: 0.25rem; }
+    .subtitle { color: var(--muted); margin-bottom: 2rem; }
+    h2 {
+      margin-top: 2rem;
+      padding-bottom: 0.35rem;
+      border-bottom: 2px solid var(--line);
+      color: var(--accent);
+    }
+    p, li { color: #1e293b; }
+    .meta {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      background: #f8fafc;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin: 1.5rem 0;
+    }
+    .meta div strong { display: block; font-size: 0.75rem; text-transform: uppercase; color: var(--muted); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0 1.5rem;
+      font-size: 0.95rem;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      text-align: left;
+    }
+    th { background: #eef2ff; }
+    .pct { font-weight: 700; color: var(--accent); }
+    .overall {
+      background: #ecfdf5;
+      border: 1px solid #a7f3d0;
+      border-radius: 12px;
+      padding: 14px 18px;
+      font-size: 1.05rem;
+      font-weight: 600;
+    }
+    pre {
+      background: var(--code-bg);
+      color: #e2e8f0;
+      padding: 16px 18px;
+      border-radius: 10px;
+      overflow-x: auto;
+      font-size: 0.82rem;
+      line-height: 1.45;
+      border: 1px solid #1e293b;
+    }
+    .caption {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin: 0.35rem 0 1.25rem;
+      font-style: italic;
+    }
+    figure { margin: 1.25rem 0 2rem; }
+    figure img {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+    }
+    .challenge {
+      background: #fff7ed;
+      border-left: 4px solid #f97316;
+      padding: 12px 16px;
+      margin: 10px 0;
+      border-radius: 0 8px 8px 0;
+    }
+    .architecture {
+      background: #f8fafc;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 14px 16px;
+      font-family: Consolas, monospace;
+      font-size: 0.85rem;
+      white-space: pre;
+    }
+    @media print {
+      body { padding: 24px; max-width: none; }
+      h2 { page-break-after: avoid; }
+      figure, pre { page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <h1>AI AutoBot Trader</h1>
+  <p class="subtitle">Project Completion Report — 30%+ Milestone Documentation</p>
+
+  <div class="meta">
+    <div><strong>Author</strong> Mario Hayden</div>
+    <div><strong>Date</strong> July 20, 2026</div>
+    <div><strong>Course Project</strong> Automated Algorithmic Trading System</div>
+    <div><strong>Overall Completion</strong> ~78%</div>
+  </div>
+
+  <h2>1. Project Description</h2>
+  <p>
+    <strong>AI AutoBot Trader</strong> is an automated algorithmic trading system that processes live and
+    historical market data, applies machine learning to predict short-term price direction, and executes
+    trades through the Alpaca API. Unlike bots that rely only on static technical indicators, this system
+    combines <em>price action</em> (RSI, MACD, ATR), <em>news sentiment</em> (Alpaca News + VADER), and
+    <em>macro mood</em> (Kaggle-style CSV) to generate signals and dynamically size positions while
+    managing risk with ATR trailing stop-losses.
+  </p>
+  <p><strong>Core capabilities implemented:</strong></p>
+  <ul>
+    <li>Async event-driven bot orchestrator (<code>main.py</code> → <code>bot/trading_bot.py</code>)</li>
+    <li>Alpaca REST market data ingestion (OHLCV bars) with optional WebSocket streaming</li>
+    <li>Random Forest / XGBoost direction classifier trained on technical + sentiment features</li>
+    <li>Automated order execution, position sync, and stop-loss management</li>
+    <li>Streamlit dashboard for portfolio monitoring, live prices, and manual trading</li>
+    <li>Backtesting pipeline and integration test suite</li>
+  </ul>
+
+  <div class="architecture">main.py
+  └── bot/trading_bot.py           # Async orchestrator
+        ├── data_pipeline.py       # OHLCV + RSI/MACD/ATR
+        ├── news_sentiment.py      # Alpaca News + VADER
+        ├── macro_sentiment.py     # Kaggle macro CSV
+        ├── strategy_engine.py     # ML signals
+        ├── allocation_engine.py   # Dynamic position sizing
+        ├── execution_client.py    # Orders + trailing stops
+        ├── stream_client.py       # WebSocket bars
+        └── connection_manager.py  # Retry & recovery
+
+dashboard_app.py                   # Streamlit UI</div>
+
+  <h2>2. Feature / Task Completion</h2>
+  <table>
+    <thead>
+      <tr><th>Feature / Task</th><th>Status</th><th>Completion</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Project architecture &amp; modular bot package</td><td>Complete</td><td class="pct">95%</td></tr>
+      <tr><td>Alpaca REST data pipeline (historical OHLCV)</td><td>Complete</td><td class="pct">90%</td></tr>
+      <tr><td>Live WebSocket streaming (bars/news)</td><td>Partial — REST fallback default</td><td class="pct">70%</td></tr>
+      <tr><td>Technical indicators (RSI, MACD, ATR)</td><td>Complete</td><td class="pct">90%</td></tr>
+      <tr><td>News sentiment (Alpaca NewsClient + VADER)</td><td>Complete</td><td class="pct">85%</td></tr>
+      <tr><td>Macro sentiment (Kaggle CSV loader)</td><td>Complete</td><td class="pct">80%</td></tr>
+      <tr><td>ML model training &amp; inference</td><td>Complete</td><td class="pct">85%</td></tr>
+      <tr><td>Dynamic allocation &amp; order execution</td><td>Complete</td><td class="pct">85%</td></tr>
+      <tr><td>ATR trailing stops &amp; risk management</td><td>Complete</td><td class="pct">85%</td></tr>
+      <tr><td>Auto-start autonomous trading loop</td><td>Complete</td><td class="pct">90%</td></tr>
+      <tr><td>Streamlit dashboard UI</td><td>Complete</td><td class="pct">85%</td></tr>
+      <tr><td>Live market prices (10s refresh)</td><td>Complete</td><td class="pct">90%</td></tr>
+      <tr><td>Manual buy/sell from dashboard</td><td>Complete</td><td class="pct">85%</td></tr>
+      <tr><td>Backtesting</td><td>Complete (custom loop)</td><td class="pct">75%</td></tr>
+      <tr><td>Integration tests (<code>test_bot.py</code>)</td><td>Complete</td><td class="pct">80%</td></tr>
+      <tr><td>Crypto OHLCV support</td><td>Not started</td><td class="pct">0%</td></tr>
+      <tr><td>Windows boot / cloud deployment</td><td>Not started</td><td class="pct">10%</td></tr>
+    </tbody>
+  </table>
+  <div class="overall">Estimated overall project completion: ~78% (well above 30% milestone requirement)</div>
+
+  <h2>3. Screenshots — User Interface</h2>
+  <p class="caption">Figure 1: Streamlit trading dashboard with live prices, bot controls, manual trade panel, positions, and recent trades.</p>
+  <figure>
+    <img src="report_assets/dashboard_ui_screenshot.png" alt="Dashboard UI screenshot" />
+  </figure>
+
+  <h2>4. Screenshots — Code</h2>
+  <p class="caption">Figure 2: Auto-start entry point — bot begins trading automatically when <code>main.py</code> launches.</p>
+  <figure>
+    <img src="report_assets/code_screenshot_main.png" alt="Code screenshot main.py" />
+  </figure>
+
+  <p class="caption">Listing A: <code>main.py</code> — automatic trading startup</p>
+  <pre>async def main() -> None:
+    config = BotConfig()
+    bot = TradingBot(config)
+
+    if config.auto_start:
+        write_flag(config.flag_file, "start")
+        await bot.start()
+        logger.info("[INFO] Auto-trading enabled — bot started automatically")
+
+    await bot.watch_flag()</pre>
+
+  <p class="caption">Listing B: <code>bot/trading_bot.py</code> — execution loop (data → ML → order)</p>
+  <pre>async def execution_tick(self, symbol: str, from_stream: bool = False) -> None:
+    sentiment, macro = self._combined_sentiment(symbol)
+    frame = await self.data_pipeline.fetch_bars(symbol)
+    bar_state = self.data_pipeline.latest_bar_state(frame, symbol, sentiment, macro)
+    signal = self.strategy_engine.evaluate(bar_state)
+    await self.execution_client.process_signal(signal, bar_state)</pre>
+
+  <p class="caption">Listing C: <code>dashboard_app.py</code> — live market prices via Alpaca snapshots</p>
+  <pre>@st.fragment(run_every=timedelta(seconds=10))
+def render_live_prices() -> None:
+    frame = fetch_live_prices(_price_watchlist())
+    st.dataframe(frame, use_container_width=True)</pre>
+
+  <h2>5. Technology Stack</h2>
+  <ul>
+    <li><strong>alpaca-py</strong> — market data, news, trading API</li>
+    <li><strong>pandas / numpy</strong> — feature engineering</li>
+    <li><strong>scikit-learn / XGBoost</strong> — ML direction model</li>
+    <li><strong>pandas-ta</strong> — RSI, MACD, ATR (with pure-pandas fallback)</li>
+    <li><strong>pydantic</strong> — validated schemas</li>
+    <li><strong>vaderSentiment</strong> — headline sentiment scoring</li>
+    <li><strong>Streamlit</strong> — web dashboard</li>
+    <li><strong>python-dotenv</strong> — secure credential management</li>
+    <li><strong>backtrader</strong> — historical strategy simulation</li>
+  </ul>
+
+  <h2>6. Challenges Encountered</h2>
+  <div class="challenge"><strong>Alpaca WebSocket connection limit</strong> — Running multiple bot instances exceeded Alpaca’s one-connection limit. Resolved by disabling WebSocket (<code>USE_WEBSOCKET=false</code>), using REST polling, and adding a circuit breaker to stop infinite reconnect loops.</div>
+  <div class="challenge"><strong>ML overfitting / live mismatch</strong> — Models trained on historical data can fail in live markets. Mitigated with sentiment features, rule-based fallback when the model is unavailable, and backtesting before live use.</div>
+  <div class="challenge"><strong>Fractional order errors</strong> — Alpaca rejected GTC orders for fractional shares. Fixed by using <code>TimeInForce.DAY</code> for fractional quantities.</div>
+  <div class="challenge"><strong>Windows UTF-8 flag file</strong> — PowerShell wrote <code>bot_control.flag</code> with a BOM, causing start/stop commands to fail. Fixed with UTF-8-safe flag read/write utilities.</div>
+  <div class="challenge"><strong>NumPy 2.x + pandas-ta</strong> — Technical indicator library broke on newer NumPy. Added a pure-pandas fallback in <code>indicators_ta.py</code>.</div>
+  <div class="challenge"><strong>Live vs paper trading</strong> — Project spec targets paper trading; live keys require careful capital and risk controls. Documented in README and dashboard warnings.</div>
+
+  <h2>7. How to Run (Verification)</h2>
+  <pre>cd aiautobottrader
+pip install -r requirements.txt
+python train_model.py
+python main.py              # auto-trading bot
+streamlit run dashboard_app.py   # web dashboard
+python test_bot.py          # smoke tests
+python backtest.py          # historical simulation</pre>
+
+  <p style="margin-top:2rem;color:var(--muted);font-size:0.9rem;">
+    To export this document as PDF: open this file in Chrome/Edge → Print → Save as PDF.
+  </p>
+</body>
+</html>

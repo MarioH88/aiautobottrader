@@ -1,23 +1,31 @@
-streamlit-lottie           # Lottie animation support for Streamlit
-alpaca-trade-api>=3.0.0  # Alpaca API client
-backtrader                # Backtesting framework
-joblib                    # Model persistence
-pandas                    # Data analysis
-pandas-ta                 # Technical analysis indicators
-python-dotenv>=1.0.0     # Environment variable management
-schedule                  # Task scheduling
-streamlit>=1.30.0        # Dashboard UI
-tqdm                      # Progress bars
-yfinance                  # Yahoo Finance data
-ta>=0.11.0                # Technical analysis library
-requests>=2.31.0          # HTTP library
-matplotlib>=3.8.0         # Plotting library
-plotly>=5.20.0            # Interactive plotting library
-scikit-learn>=1.4.0      # Machine learning library
-websocket-client>=1.6.0   # WebSocket client for Python
-alpaca-py>=0.13.0        # Alpaca Python SDK
-prophet
+# Autonomous AI Trading Bot — MVP Stack
+alpaca-py>=0.13.0          # Official Alpaca SDK (REST + WebSocket)
+pandas>=2.0.0
+numpy>=1.26.0
+pandas-ta>=0.3.14b         # Technical analysis (RSI, MACD) — falls back to pure pandas if unavailable
+pydantic>=2.0.0            # Runtime schema validation
+python-dotenv>=1.0.0
+scikit-learn>=1.4.0
+xgboost>=2.0.0           # Optional: set ML_MODEL_TYPE=xgboost
+joblib>=1.3.0
+websockets>=12.0
+vaderSentiment>=3.3.2      # VADER sentiment tokenizer (Phase 2)
+
+# Backtesting & analysis
+backtrader
+yfinance>=1.5.0
+tqdm
+
+# Legacy / optional tooling (dashboards, sentiment — out of MVP scope)
+streamlit>=1.30.0
+streamlit-lottie
+requests>=2.31.0
+matplotlib>=3.8.0
+plotly>=5.20.0
+tweepy
+praw
 textblob
 beautifulsoup4
-webull
-robin_stocks
+
+# Deprecated legacy SDK — kept for older scripts only
+alpaca-trade-api>=3.0.0
