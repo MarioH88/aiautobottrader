@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from bot.indicators_ta import compute_rsi_macd
+from bot.indicators_ta import compute_atr, compute_rsi_macd
 
 
 def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
@@ -14,9 +14,10 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
         df: OHLCV DataFrame with a lowercase ``close`` column.
 
     Returns:
-        DataFrame enriched with RSI, MACD, and legacy column aliases.
+        DataFrame enriched with RSI, MACD, ATR, and legacy column aliases.
     """
     enriched = compute_rsi_macd(df)
+    enriched["atr"] = compute_atr(enriched, length=14)
     enriched["rsi_14"] = enriched["rsi"]
     enriched["macd_signal"] = enriched["macd"].ewm(span=9, adjust=False).mean()
     enriched["macd_hist"] = enriched["macd"] - enriched["macd_signal"]

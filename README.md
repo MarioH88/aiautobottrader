@@ -1,88 +1,91 @@
 # AI AutoBot Trader
 
-Automated algorithmic trading system that processes live market data, uses machine learning to predict short-term price direction, and executes trades via the Alpaca API. The bot combines **news sentiment** (Alpaca News + VADER), **macro mood** (Kaggle-style CSV), and **price action** (RSI/MACD/ATR) to dynamically size positions while managing risk with ATR trailing stop-losses.
+Automated algorithmic trading system that processes live market data, uses machine learning to predict short-term price direction, and executes trades via the Alpaca API. The bot combines **news sentiment** (Alpaca News + VADER), **macro mood** (Kaggle-style CSV), and **price action** (RSI/MACD/ATR) to dynamically size positions while managing risk with **broker-backed ATR trailing stop-losses**.
 
-## Data Sources
+Supports **stocks and crypto** (e.g. `AAPL`, `BTC/USD`), a **dashboard scheduler** (including overnight windows), Discord alerts, and **Docker / Windows / Linux** deploy paths.
 
-| Source | API / File | Usage |
-|--------|------------|-------|
-| OHLCV bars | Alpaca Market Data (REST + optional WebSocket) | Features + execution reference |
-| News headlines | Alpaca NewsClient (REST poll or WebSocket) | Per-symbol VADER sentiment |
-| Macro sentiment | `macro_sentiment.csv` (Kaggle export) | Market-wide mood overlay |
+## How the Bot Learns to Trade
 
-## Architecture
-
-```
-main.py
-  └── bot/trading_bot.py           # Async orchestrator
-        ├── data_pipeline.py       # OHLCV + RSI/MACD/ATR
-        ├── news_sentiment.py      # Alpaca News + VADER
-        ├── macro_sentiment.py     # Kaggle macro mood CSV
-        ├── strategy_engine.py     # ML direction forecast
-        ├── allocation_engine.py   # Dynamic position sizing
-        ├── execution_client.py    # Orders + trailing stops + orphan cancel
-        ├── stream_client.py       # WebSocket live bars
-        └── connection_manager.py  # Retry, 429 backoff, disconnect recovery
-```
-
-## Stack
-
-- **alpaca-py** — REST trading, market data, news
-- **pandas / numpy** — feature engineering
-- **scikit-learn / XGBoost** — direction classifier (`ML_MODEL_TYPE`)
-- **pandas-ta** (with pure-pandas fallback) — technical indicators
-- **pydantic** — validated market/position schemas
-- **vaderSentiment** — headline scoring
-- **python-dotenv** — credential management
-- **backtrader** — historical simulation (`backtest.py`)
+1. **Train offline:** `python train_model.py` fits Random Forest/XGBoost on `train_data.csv` (RSI, MACD, sentiment) and saves `model.pkl`
+2. **Trade live:** each cycle computes the same features from market + news data and asks the model for buy/sell/hold
+3. **Manage risk:** allocation sizes the order; ATR trailing stops protect positions
+4. **Fallback:** if the model is unavailable, RSI/MACD rules still trade
+5. **Improve:** update training data, retrain, restart — the bot does not auto-relearn after each trade
 
 ## Setup
 
 ```bash
 cd aiautobottrader
+python -m venv .venv
+# Windows: .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 cp .env.example .env   # add Alpaca keys (paper recommended)
-python train_model.py  # or ML_MODEL_TYPE=xgboost python train_model.py
+python train_model.py
 ```
 
-Place a Kaggle macro sentiment export at `macro_sentiment.csv` (columns: `date`, `macro_sentiment`).
+Windows one-shot:
+
+```powershell
+.\deploy.ps1 -Dashboard
+```
+
+Docker:
+
+```bash
+docker compose up -d --build
+```
 
 ## Run
 
 ```bash
 python main.py
-python test_bot.py     # integration smoke tests
-python backtest.py     # historical simulation
+python test_bot.py
+python backtest.py
+streamlit run dashboard_app.py
 ```
 
 Control via `bot_control.flag`: `start` | `stop` | `emergency_stop`
 
+Scheduler windows live in `scheduler_config.json` (editable in the dashboard **Scheduler** page). `AUTO_START` only writes the flag — `watch_flag()` always respects schedule windows and never overrides `emergency_stop`.
+
+## Windows Task Scheduler (auto-restart)
+
+1. Open **Task Scheduler** → Create Task
+2. Trigger: At startup (or At log on)
+3. Action: Start a program
+   - Program: `C:\Users\<you>\...\aiautobottrader\.venv\Scripts\python.exe`
+   - Arguments: `main.py`
+   - Start in: `C:\Users\<you>\...\aiautobottrader`
+4. Settings: **If the task fails, restart every 1 minute** (set retry count as needed)
+5. Ensure `.env` exists in the Start-in folder
+
+Optional CLI equivalent:
+
 ```powershell
-Set-Content -Path bot_control.flag -Value "start" -Encoding utf8 -NoNewline
+schtasks /Create /TN "AIAutoBotTrader" /SC ONSTART /RL HIGHEST /TR "\"$PWD\.venv\Scripts\python.exe\" main.py" /WD "$PWD"
 ```
 
 ## Key Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `APCA_API_BASE_URL` | paper URL | Use paper endpoint for safe testing |
-| `USE_WEBSOCKET` | `true` | Live bar WebSocket (disable if connection limit hit) |
+| `APCA_API_BASE_URL` | paper URL | Paper recommended for safe testing |
+| `TRADING_SYMBOLS` | `AAPL,TSLA` | Stocks and/or crypto (`BTC/USD`) |
+| `USE_WEBSOCKET` | `false` | Live bar WebSocket |
 | `ENABLE_NEWS` | `true` | Alpaca news sentiment |
-| `USE_NEWS_WEBSOCKET` | `false` | News WebSocket (uses extra connection slot) |
-| `ENABLE_MACRO_SENTIMENT` | `true` | Load Kaggle macro CSV |
-| `MACRO_SENTIMENT_CSV` | `macro_sentiment.csv` | Path to macro dataset |
-| `SENTIMENT_NEWS_WEIGHT` | `0.6` | News vs macro blend weight |
+| `SCHEDULER_CONFIG_FILE` | `scheduler_config.json` | Trading windows |
+| `DISCORD_WEBHOOK_URL` | empty | Trade / failure alerts |
 | `MAX_ALLOCATION_PCT` | `0.10` | Max buying-power fraction per symbol |
-| `ML_MODEL_TYPE` | `random_forest` | `random_forest` or `xgboost` |
-| `ATR_MULTIPLIER` | `2.0` | Trailing stop distance |
 | `REST_FALLBACK_INTERVAL_SEC` | `120` | REST poll when WebSocket down |
 
 ## Risk & Resilience
 
-- **ATR trailing stops** tighten as price moves favorably
-- **Orphan order cancellation** on WebSocket disconnect or connectivity loss
-- **REST fallback loop** continues polling when streams are unavailable
-- **Connection manager** handles HTTP 429 and exponential backoff
+- Broker stop orders on buy + software ATR trail with cancel/replace
+- Orphan order cancellation on disconnect, then stop re-arm
+- REST fallback when WebSocket slots are exhausted
+- Scheduler can pause trading outside configured hours (overnight supported)
+- Fractional sizing for crypto and low buying-power accounts
+- Discord webhook notifications on fills / failures
 
 ## Disclaimer
 

@@ -6,16 +6,32 @@ import pandas as pd
 import requests
 import streamlit as st
 from dotenv import load_dotenv
-from alpaca_trade_api.rest import REST
 
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("dashboard")
 
+from bot.dashboard_api import (
+    DashboardAlpaca,
+    snapshot_last_price,
+    snapshot_prev_close,
+    snapshot_quote,
+    snapshot_trade_time,
+)
 from bot.flag_file import read_flag, write_flag
+from bot.scheduler import (
+    DEFAULT_SCHEDULER_CONFIG,
+    describe_active_window,
+    is_trading_window_active,
+    load_scheduler_config,
+    save_scheduler_config,
+    validate_hhmm,
+)
+from bot.symbols import normalize_symbol
 
 FLAG_FILE = "bot_control.flag"
+SCHEDULER_FILE = "scheduler_config.json"
 MENU_DASHBOARD = "Dashboard"
 MENU_SCHEDULER = "Scheduler"
 MENU_SETTINGS = "Settings"
@@ -23,20 +39,21 @@ THEME_LIGHT = "light"
 THEME_DARK = "dark"
 POPULAR_SYMBOLS = [
     "AAPL", "TSLA", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "AMD", "NFLX", "SPY", "QQQ",
+    "BTC/USD", "ETH/USD",
 ]
 
 
 def get_configured_symbols() -> list[str]:
     """Return symbols the auto-bot watches from .env."""
     raw = os.getenv("TRADING_SYMBOLS", "AAPL,TSLA")
-    return [symbol.strip().upper() for symbol in raw.split(",") if symbol.strip()]
+    return [normalize_symbol(symbol) for symbol in raw.split(",") if symbol.strip()]
 
 
 def get_tradeable_symbols() -> list[str]:
     """Combine bot symbols, popular tickers, and trending names for the UI."""
     symbols = set(get_configured_symbols())
     symbols.update(POPULAR_SYMBOLS)
-    symbols.update(get_trending_tickers())
+    symbols.update(normalize_symbol(s) for s in get_trending_tickers())
     return sorted(symbols)
 
 
@@ -249,14 +266,26 @@ def _status_meta(status: str) -> tuple[str, str, str]:
     mapping = {
         "start": ("Live", "#34d399", "running"),
         "stop": ("Stopped", "#94a3b8", "stopped"),
+        "paused_by_schedule": ("Paused by Schedule", "#fbbf24", "idle"),
         "emergency_stop": ("Emergency Halt", "#f87171", "halt"),
     }
     return mapping.get(status, ("Not Configured", "#fbbf24", "idle"))
 
 
+def resolve_bot_display_status() -> str:
+    """Combine flag + scheduler into a dashboard-facing status."""
+    flag = read_bot_status()
+    schedule = load_scheduler_config(SCHEDULER_FILE)
+    if flag == "emergency_stop":
+        return "emergency_stop"
+    if schedule.get("enabled") and not is_trading_window_active(schedule) and flag == "start":
+        return "paused_by_schedule"
+    return flag
+
+
 def render_hero(title: str, subtitle: str) -> None:
     """Render a modern page hero banner."""
-    status = read_bot_status()
+    status = resolve_bot_display_status()
     label, dot_color, _ = _status_meta(status)
     st.markdown(
         f"""
@@ -336,14 +365,8 @@ def show_startup_popup() -> None:
 
 @st.cache_resource
 def init_alpaca_api():
-    api_key = os.getenv("APCA_API_KEY_ID")
-    api_secret = os.getenv("APCA_API_SECRET_KEY")
-    base_url = os.getenv("APCA_API_BASE_URL", "https://paper-api.alpaca.markets")
-    if not api_key or not api_secret:
-        st.error("Missing Alpaca API credentials in .env")
-        return None
     try:
-        api = REST(api_key, api_secret, base_url, api_version="v2")
+        api = DashboardAlpaca()
         _ = api.get_account()
         return api
     except Exception as e:
@@ -362,7 +385,7 @@ def get_account_info():
             "equity": float(acc.equity),
             "cash": float(acc.cash),
             "buying_power": float(acc.buying_power),
-            "status": acc.status,
+            "status": str(acc.status),
         }
     except Exception as e:
         st.warning(f"Account info unavailable: {e}")
@@ -382,9 +405,9 @@ def get_positions():
 
 def get_position_qty(symbol: str) -> float:
     """Return held quantity for a symbol, or 0."""
-    symbol = symbol.upper()
+    symbol = normalize_symbol(symbol)
     for position in get_positions():
-        if position.symbol.upper() == symbol:
+        if normalize_symbol(position.symbol) == symbol:
             return float(position.qty)
     return 0.0
 
@@ -394,7 +417,7 @@ def fetch_live_prices(symbols: list[str]) -> pd.DataFrame:
     api = init_alpaca_api()
     if not api:
         return pd.DataFrame()
-    unique = sorted({symbol.strip().upper() for symbol in symbols if symbol and symbol.strip()})
+    unique = sorted({normalize_symbol(symbol) for symbol in symbols if symbol and str(symbol).strip()})
     if not unique:
         return pd.DataFrame()
 
@@ -405,16 +428,18 @@ def fetch_live_prices(symbols: list[str]) -> pd.DataFrame:
             snap = snapshots.get(symbol)
             if snap is None:
                 continue
-            price = float(snap.latest_trade.p) if snap.latest_trade else None
-            bid = float(snap.latest_quote.bp) if snap.latest_quote and snap.latest_quote.bp else None
-            ask = float(snap.latest_quote.ap) if snap.latest_quote and snap.latest_quote.ap else None
-            prev_close = float(snap.prev_daily_bar.c) if snap.prev_daily_bar else None
+            price = snapshot_last_price(snap)
+            bid, ask = snapshot_quote(snap)
+            prev_close = snapshot_prev_close(snap)
             change_pct = None
             if price is not None and prev_close:
                 change_pct = ((price - prev_close) / prev_close) * 100
-            updated = snap.latest_trade.t if snap.latest_trade else None
+            updated = snapshot_trade_time(snap)
             if updated is not None:
-                updated = updated.astimezone(timezone.utc).strftime("%H:%M:%S UTC")
+                try:
+                    updated = updated.astimezone(timezone.utc).strftime("%H:%M:%S UTC")
+                except Exception:
+                    updated = str(updated)
             rows.append(
                 {
                     "Symbol": symbol,
@@ -434,16 +459,16 @@ def fetch_live_prices(symbols: list[str]) -> pd.DataFrame:
 def _price_watchlist() -> list[str]:
     """Build the symbol list for the live prices panel."""
     symbols = set(get_configured_symbols())
-    symbols.update(POPULAR_SYMBOLS[:6])
-    symbols.update(get_trending_tickers()[:5])
+    symbols.update(POPULAR_SYMBOLS[:8])
+    symbols.update(normalize_symbol(s) for s in get_trending_tickers()[:5])
     for position in get_positions():
-        symbols.add(position.symbol.upper())
+        symbols.add(normalize_symbol(position.symbol))
     selected = st.session_state.get("manual_symbol")
     if selected:
-        symbols.add(str(selected).upper())
+        symbols.add(normalize_symbol(str(selected)))
     custom = st.session_state.get("custom_symbol_input", "")
     if custom.strip():
-        symbols.add(custom.strip().upper())
+        symbols.add(normalize_symbol(custom))
     return sorted(symbols)
 
 
@@ -499,21 +524,14 @@ def submit_manual_order(symbol: str, side: str, qty: float) -> tuple[bool, str]:
     api = init_alpaca_api()
     if not api:
         return False, "Alpaca API not connected"
-    symbol = symbol.strip().upper()
+    symbol = normalize_symbol(symbol)
     if not symbol:
         return False, "Enter a valid symbol"
     if qty <= 0:
         return False, "Quantity must be greater than 0"
-    time_in_force = "day" if qty != int(qty) else "gtc"
     try:
-        api.submit_order(
-            symbol=symbol,
-            qty=qty,
-            side=side,
-            type="market",
-            time_in_force=time_in_force,
-        )
-        return True, f"{side.upper()} order submitted: {qty} share(s) of {symbol}"
+        api.submit_market_order(symbol=symbol, side=side, qty=qty)
+        return True, f"{side.upper()} order submitted: {qty} of {symbol}"
     except Exception as exc:
         logger.exception("Manual order failed")
         return False, str(exc)
@@ -563,15 +581,15 @@ def render_sidebar():
         unsafe_allow_html=True,
     )
 
-    status = read_bot_status()
+    status = resolve_bot_display_status()
     label, dot_color, _ = _status_meta(status)
     st.sidebar.markdown(
         f'<span class="status-pill"><span class="status-dot" style="background:{dot_color};"></span>{label}</span>',
         unsafe_allow_html=True,
     )
 
-    running = st.session_state.get("bot_running", False) or status == "start"
-    power_label = "Pause Bot" if running else "Start Bot"
+    running = status == "start"
+    power_label = "Pause Bot" if running or status == "paused_by_schedule" else "Start Bot"
     if st.sidebar.button(power_label, type="primary", use_container_width=True):
         running = not running
         st.session_state["bot_running"] = running
@@ -639,7 +657,7 @@ def render_dashboard():
                 key="custom_symbol_input",
             )
             if custom_symbol.strip():
-                symbol = custom_symbol.strip().upper()
+                symbol = normalize_symbol(custom_symbol)
 
             render_selected_symbol_price(symbol)
 
@@ -723,6 +741,97 @@ def render_settings():
         st.write(", ".join(f"`{s}`" for s in symbols))
         st.code(f"TRADING_SYMBOLS={','.join(symbols)}", language="bash")
         st.caption("Update `.env` and restart `python main.py` to change auto-traded symbols.")
+        st.caption("Crypto examples: `BTC/USD`, `ETH/USD` (or `BTCUSD`).")
+
+
+def render_scheduler():
+    render_hero("Scheduler", "Automated run windows that pause the bot outside market hours.")
+
+    config = load_scheduler_config(SCHEDULER_FILE)
+    card = render_in_card("Status")
+    with card:
+        st.write(describe_active_window(config))
+        display = resolve_bot_display_status()
+        if display == "paused_by_schedule":
+            st.warning("Bot flag is start, but scheduler is holding it paused.")
+        elif config.get("enabled"):
+            if is_trading_window_active(config):
+                st.success("Currently inside an active trading window.")
+            else:
+                st.warning("Currently outside trading windows — bot will stay paused.")
+
+    card = render_in_card("Configure Windows")
+    with card:
+        enabled = st.toggle("Enable scheduler", value=bool(config.get("enabled", False)))
+        timezone_name = st.text_input(
+            "Timezone",
+            value=str(config.get("timezone", "America/New_York")),
+            help="IANA timezone, e.g. America/New_York or America/Chicago",
+        )
+        windows = list(config.get("windows") or DEFAULT_SCHEDULER_CONFIG["windows"])
+        day_options = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+        edited: list[dict] = []
+        for idx, window in enumerate(windows):
+            st.markdown(f"**Window {idx + 1}**")
+            selected_days = st.multiselect(
+                f"Active days #{idx + 1}",
+                options=day_options,
+                default=[d for d in window.get("days", day_options[:5]) if d in day_options],
+                key=f"sched_days_{idx}",
+            )
+            c1, c2, c3 = st.columns([1, 1, 0.6])
+            start_time = c1.text_input(
+                f"Start #{idx + 1}",
+                value=str(window.get("start", "09:30")),
+                key=f"sched_start_{idx}",
+            )
+            end_time = c2.text_input(
+                f"End #{idx + 1}",
+                value=str(window.get("end", "16:00")),
+                key=f"sched_end_{idx}",
+                help="Overnight windows supported (e.g. 22:00 -> 06:00)",
+            )
+            remove = c3.checkbox("Remove", key=f"sched_remove_{idx}")
+            if not remove:
+                edited.append(
+                    {
+                        "days": selected_days or ["mon", "tue", "wed", "thu", "fri"],
+                        "start": start_time.strip() or "09:30",
+                        "end": end_time.strip() or "16:00",
+                    }
+                )
+
+        if st.button("Add window"):
+            edited.append({"days": ["mon", "tue", "wed", "thu", "fri"], "start": "09:30", "end": "16:00"})
+            st.session_state["pending_scheduler_windows"] = edited
+            st.rerun()
+
+        pending = st.session_state.pop("pending_scheduler_windows", None)
+        if pending is not None:
+            edited = pending
+
+        if st.button("Save schedule", type="primary"):
+            invalid = [
+                w for w in edited
+                if not validate_hhmm(w["start"]) or not validate_hhmm(w["end"])
+            ]
+            if invalid:
+                st.error("Each window needs valid HH:MM start/end times.")
+            elif not edited:
+                st.error("Keep at least one trading window, or disable the scheduler.")
+            else:
+                payload = {
+                    "enabled": enabled,
+                    "timezone": timezone_name.strip() or "America/New_York",
+                    "windows": edited,
+                }
+                if save_scheduler_config(SCHEDULER_FILE, payload):
+                    st.success("Scheduler saved. The bot watcher will apply it within a few seconds.")
+                    st.toast("Scheduler updated", icon="✅")
+                else:
+                    st.error("Failed to save scheduler_config.json")
+
+        st.caption(f"Config file: `{SCHEDULER_FILE}`")
 
 
 def main():
@@ -744,8 +853,7 @@ def main():
     if menu == MENU_DASHBOARD:
         render_dashboard()
     elif menu == MENU_SCHEDULER:
-        render_hero("Scheduler", "Automated run windows and cron-style triggers.")
-        st.info("Scheduler coming soon.")
+        render_scheduler()
     elif menu == MENU_SETTINGS:
         render_settings()
 

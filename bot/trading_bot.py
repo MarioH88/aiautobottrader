@@ -16,6 +16,11 @@ from bot.macro_sentiment import MacroSentimentService, combine_sentiment
 from bot.news_sentiment import NewsSentimentService
 from bot.flag_file import read_flag
 from bot.schemas import MarketBarState
+from bot.scheduler import (
+    describe_active_window,
+    is_trading_window_active,
+    load_scheduler_config,
+)
 from bot.stream_client import StreamClient
 from bot.strategy_engine import StrategyEngine
 
@@ -297,18 +302,35 @@ class TradingBot:
         logger.info("[INFO] Trading bot stopped")
 
     async def watch_flag(self) -> None:
-        """Poll the flag file and start/stop the bot accordingly."""
+        """Poll the flag file and start/stop the bot according to schedule windows."""
         last_cmd: Optional[str] = None
-        logger.info("[INFO] Flag watcher active | file=%s", self.config.flag_file)
+        logger.info(
+            "[INFO] Flag watcher active | file=%s | %s",
+            self.config.flag_file,
+            describe_active_window(load_scheduler_config(self.config.scheduler_config_file)),
+        )
         while True:
-            cmd = read_flag(self.config.flag_file)
+            schedule = load_scheduler_config(self.config.scheduler_config_file)
+            flag_cmd = read_flag(self.config.flag_file)
+
+            if flag_cmd == "emergency_stop":
+                cmd = "emergency_stop"
+            elif schedule.get("enabled") and not is_trading_window_active(schedule):
+                # Outside the trading window, force a pause unless emergency already set.
+                cmd = "stop" if flag_cmd == "start" else (flag_cmd or "stop")
+            else:
+                cmd = flag_cmd
+
             if cmd != last_cmd:
                 if cmd == "start":
+                    logger.info("[INFO] %s", describe_active_window(schedule))
                     await self.start()
                 elif cmd in {"stop", "emergency_stop"}:
                     await self.stop()
                     if cmd == "emergency_stop":
                         logger.error("[CRITICAL] Emergency stop activated")
+                    elif schedule.get("enabled") and not is_trading_window_active(schedule):
+                        logger.info("[INFO] Outside trading window — bot paused")
                 elif cmd:
                     logger.error("[ERROR] Unknown flag command: %s", cmd)
                 last_cmd = cmd

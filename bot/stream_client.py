@@ -1,4 +1,4 @@
-"""Real-time Alpaca WebSocket bar streaming."""
+"""Real-time Alpaca WebSocket bar streaming for stocks and crypto."""
 
 from __future__ import annotations
 
@@ -8,7 +8,9 @@ from collections import defaultdict, deque
 from typing import Awaitable, Callable, Deque, Dict, List, Optional
 
 import pandas as pd
-from alpaca.data.live import StockDataStream
+from alpaca.data.live import CryptoDataStream, StockDataStream
+
+from bot.symbols import normalize_symbol, partition_symbols
 
 logger = logging.getLogger("trading_bot")
 
@@ -37,8 +39,10 @@ class StreamClient:
         self._api_secret = api_secret
         self._on_bar = on_bar
         self._max_bars = max_bars
-        self._symbols: List[str] = []
-        self._stream: Optional[StockDataStream] = None
+        self._stock_symbols: List[str] = []
+        self._crypto_symbols: List[str] = []
+        self._stock_stream: Optional[StockDataStream] = None
+        self._crypto_stream: Optional[CryptoDataStream] = None
         self._running = False
         self._bars: Dict[str, Deque[dict]] = defaultdict(lambda: deque(maxlen=max_bars))
 
@@ -49,52 +53,85 @@ class StreamClient:
 
     def get_frame(self, symbol: str) -> pd.DataFrame:
         """Return cached bars for a symbol as a DataFrame."""
-        bucket = self._bars.get(symbol.upper())
+        key = normalize_symbol(symbol)
+        bucket = self._bars.get(key)
         if not bucket:
             return pd.DataFrame()
         return pd.DataFrame(list(bucket))
+
+    async def _handle_bar(self, bar: object) -> None:
+        """Normalize a stream bar and invoke the user callback."""
+        symbol = normalize_symbol(str(getattr(bar, "symbol", "")))
+        record = {
+            "timestamp": getattr(bar, "timestamp", None).isoformat()
+            if getattr(bar, "timestamp", None)
+            else "",
+            "open": float(getattr(bar, "open", 0)),
+            "high": float(getattr(bar, "high", 0)),
+            "low": float(getattr(bar, "low", 0)),
+            "close": float(getattr(bar, "close", 0)),
+            "volume": float(getattr(bar, "volume", 0)),
+            "symbol": symbol,
+        }
+        self._bars[symbol].append(record)
+        try:
+            await self._on_bar(symbol, record)
+        except Exception as exc:
+            logger.error("[CRITICAL] Bar handler failed for %s: %s", symbol, exc)
 
     async def start(self, symbols: List[str]) -> None:
         """Subscribe to live bar streams and block until stopped.
 
         Args:
-            symbols: Ticker symbols to subscribe.
+            symbols: Ticker symbols to subscribe (stocks and/or crypto).
         """
-        self._symbols = [s.upper() for s in symbols]
+        self._stock_symbols, self._crypto_symbols = partition_symbols(symbols)
         await self.stop()
         self._running = True
 
-        async def _async_bar_handler(bar: object) -> None:
-            symbol = str(getattr(bar, "symbol", "")).upper()
-            record = {
-                "timestamp": getattr(bar, "timestamp", None).isoformat()
-                if getattr(bar, "timestamp", None)
-                else "",
-                "open": float(getattr(bar, "open", 0)),
-                "high": float(getattr(bar, "high", 0)),
-                "low": float(getattr(bar, "low", 0)),
-                "close": float(getattr(bar, "close", 0)),
-                "volume": int(getattr(bar, "volume", 0)),
-                "symbol": symbol,
-            }
-            self._bars[symbol].append(record)
-            try:
-                await self._on_bar(symbol, record)
-            except Exception as exc:
-                logger.error("[CRITICAL] Bar handler failed for %s: %s", symbol, exc)
+        tasks: List[asyncio.Task[None]] = []
+        if self._stock_symbols:
+            tasks.append(asyncio.create_task(self._run_stock_stream(), name="stock_stream"))
+        if self._crypto_symbols:
+            tasks.append(asyncio.create_task(self._run_crypto_stream(), name="crypto_stream"))
 
-        self._stream = StockDataStream(self._api_key, self._api_secret)
-        for symbol in self._symbols:
-            self._stream.subscribe_bars(_async_bar_handler, symbol)
-        logger.info("[INFO] Bar stream subscribed | symbols=%s", self._symbols)
-        await self._stream._run_forever()
+        if not tasks:
+            logger.error("[ERROR] No valid symbols provided for bar stream")
+            return
+
+        logger.info(
+            "[INFO] Bar stream subscribed | stocks=%s | crypto=%s",
+            self._stock_symbols,
+            self._crypto_symbols,
+        )
+        await asyncio.gather(*tasks)
+
+    async def _run_stock_stream(self) -> None:
+        """Run the stock WebSocket stream."""
+        self._stock_stream = StockDataStream(self._api_key, self._api_secret)
+        for symbol in self._stock_symbols:
+            self._stock_stream.subscribe_bars(self._handle_bar, symbol)
+        await self._stock_stream._run_forever()
+
+    async def _run_crypto_stream(self) -> None:
+        """Run the crypto WebSocket stream."""
+        self._crypto_stream = CryptoDataStream(self._api_key, self._api_secret)
+        for symbol in self._crypto_symbols:
+            self._crypto_stream.subscribe_bars(self._handle_bar, symbol)
+        await self._crypto_stream._run_forever()
 
     async def stop(self) -> None:
-        """Stop the WebSocket stream."""
+        """Stop all WebSocket streams."""
         self._running = False
-        if self._stream is not None:
+        if self._stock_stream is not None:
             try:
-                await self._stream.stop_ws()
+                await self._stock_stream.stop_ws()
             except Exception as exc:
-                logger.error("[ERROR] Failed to stop bar stream: %s", exc)
-            self._stream = None
+                logger.error("[ERROR] Failed to stop stock bar stream: %s", exc)
+            self._stock_stream = None
+        if self._crypto_stream is not None:
+            try:
+                await self._crypto_stream.stop_ws()
+            except Exception as exc:
+                logger.error("[ERROR] Failed to stop crypto bar stream: %s", exc)
+            self._crypto_stream = None

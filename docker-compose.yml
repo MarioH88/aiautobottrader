@@ -1,0 +1,55 @@
+services:
+  bot:
+    build: .
+    container_name: aiautobottrader-bot
+    env_file:
+      - .env
+    volumes:
+      - ./:/app
+      - bot_data:/app/data
+    command: ["python", "main.py"]
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import os,time; p='bot_runtime.log'; assert os.path.exists(p) and time.time()-os.path.getmtime(p)<600\"",
+        ]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  dashboard:
+    build: .
+    container_name: aiautobottrader-dashboard
+    env_file:
+      - .env
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./:/app
+    command:
+      [
+        "streamlit",
+        "run",
+        "dashboard_app.py",
+        "--server.port=8501",
+        "--server.address=0.0.0.0",
+      ]
+    restart: unless-stopped
+    depends_on:
+      - bot
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/', timeout=5)\"",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+volumes:
+  bot_data:

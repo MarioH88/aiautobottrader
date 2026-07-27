@@ -9,6 +9,8 @@ from typing import List
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field, field_validator
 
+from bot.symbols import normalize_symbol
+
 # Always load .env from the project root (aiautobottrader/), not parent folders.
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(_PROJECT_ROOT / ".env", override=True)
@@ -56,6 +58,7 @@ class BotConfig(BaseModel):
     sentiment_news_weight: float = float(os.getenv("SENTIMENT_NEWS_WEIGHT", "0.6"))
     max_allocation_pct: float = float(os.getenv("MAX_ALLOCATION_PCT", "0.10"))
     ml_model_type: str = os.getenv("ML_MODEL_TYPE", "random_forest")
+    scheduler_config_file: str = os.getenv("SCHEDULER_CONFIG_FILE", "scheduler_config.json")
 
     @field_validator("api_key", "api_secret")
     @classmethod
@@ -78,4 +81,4 @@ def _is_paper_trading() -> bool:
 def _parse_symbols() -> List[str]:
     """Parse comma-separated symbols from the environment."""
     raw = os.getenv("TRADING_SYMBOLS", "AAPL,TSLA")
-    return [symbol.strip().upper() for symbol in raw.split(",") if symbol.strip()]
+    return [normalize_symbol(symbol) for symbol in raw.split(",") if symbol.strip()]

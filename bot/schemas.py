@@ -39,6 +39,7 @@ class PositionState(BaseModel):
     current_stop_loss: float
     trailing_activation_price: float
     atr_at_entry: float = 0.0
+    stop_order_id: Optional[str] = None
 
 
 class TradeSignal(BaseModel):

@@ -1,0 +1,11 @@
+{
+  "enabled": false,
+  "timezone": "America/New_York",
+  "windows": [
+    {
+      "days": ["mon", "tue", "wed", "thu", "fri"],
+      "start": "09:30",
+      "end": "16:00"
+    }
+  ]
+}

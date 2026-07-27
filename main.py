@@ -6,29 +6,40 @@ import asyncio
 import logging
 
 from bot.config import BotConfig
-from bot.flag_file import write_flag
+from bot.flag_file import read_flag, write_flag
 from bot.logging_setup import configure_logging
+from bot.scheduler import describe_active_window, is_trading_window_active, load_scheduler_config
 from bot.trading_bot import TradingBot
 
 logger = logging.getLogger("trading_bot")
 
 
 async def main() -> None:
-    """Boot the trading bot and optionally auto-start execution."""
+    """Boot the trading bot and optionally request auto-start via the flag file."""
     config = BotConfig()
     configure_logging(config.runtime_log_file)
     bot = TradingBot(config)
+    schedule = load_scheduler_config(config.scheduler_config_file)
     logger.info(
         "[INFO] Autonomous AI Trading Bot ready (paper=%s, auto_start=%s, symbols=%s)",
         config.paper,
         config.auto_start,
         config.symbols,
     )
+    logger.info("[INFO] %s", describe_active_window(schedule))
 
     if config.auto_start:
-        write_flag(config.flag_file, "start")
-        await bot.start()
-        logger.info("[INFO] Auto-trading enabled — bot started automatically")
+        current = read_flag(config.flag_file)
+        if current == "emergency_stop":
+            logger.error("[CRITICAL] AUTO_START skipped — emergency_stop flag is set")
+        else:
+            # Only write the flag; watch_flag() is the sole start/stop authority
+            # so scheduler windows are always respected.
+            write_flag(config.flag_file, "start")
+            if schedule.get("enabled") and not is_trading_window_active(schedule):
+                logger.info("[INFO] AUTO_START queued — waiting for trading window")
+            else:
+                logger.info("[INFO] AUTO_START requested — watch_flag will start the bot")
 
     await bot.watch_flag()
 

@@ -7,12 +7,13 @@ import logging
 from typing import Dict, List, Optional
 
 import pandas as pd
-from alpaca.data.historical import StockHistoricalDataClient
-from alpaca.data.requests import StockBarsRequest
+from alpaca.data.historical import CryptoHistoricalDataClient, StockHistoricalDataClient
+from alpaca.data.requests import CryptoBarsRequest, StockBarsRequest
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
 from bot.indicators_ta import compute_atr, compute_rsi_macd
 from bot.schemas import MarketBarState
+from bot.symbols import is_crypto_symbol, normalize_symbol
 
 logger = logging.getLogger("trading_bot")
 
@@ -35,7 +36,8 @@ class DataPipeline:
             bar_limit: Number of 1-minute bars to pull per REST request.
             atr_period: ATR lookback for trailing stop calculations.
         """
-        self._client = StockHistoricalDataClient(api_key, api_secret)
+        self._stock_client = StockHistoricalDataClient(api_key, api_secret)
+        self._crypto_client = CryptoHistoricalDataClient(api_key, api_secret)
         self._bar_limit = bar_limit
         self._atr_period = atr_period
         self._frames: Dict[str, pd.DataFrame] = {}
@@ -52,14 +54,71 @@ class DataPipeline:
         """
         if frame.empty:
             return frame
-        self._frames[symbol.upper()] = frame.copy()
-        return self._frames[symbol.upper()]
+        key = normalize_symbol(symbol)
+        self._frames[key] = frame.copy()
+        return self._frames[key]
+
+    async def _fetch_stock_bars(self, symbol: str) -> pd.DataFrame:
+        """Fetch recent 1-minute stock bars via REST."""
+        request = StockBarsRequest(
+            symbol_or_symbols=symbol,
+            timeframe=TimeFrame(1, TimeFrameUnit.Minute),
+            limit=self._bar_limit,
+        )
+        response = await asyncio.to_thread(self._stock_client.get_stock_bars, request)
+        bars = response.data.get(symbol, [])
+        if not bars:
+            raise RuntimeError(f"No bars returned for {symbol}")
+        rows: List[dict] = []
+        for bar in bars:
+            rows.append(
+                {
+                    "timestamp": bar.timestamp.isoformat(),
+                    "open": float(bar.open),
+                    "high": float(bar.high),
+                    "low": float(bar.low),
+                    "close": float(bar.close),
+                    "volume": int(bar.volume),
+                    "symbol": symbol,
+                }
+            )
+        frame = pd.DataFrame(rows)
+        self._frames[symbol] = frame
+        return frame
+
+    async def _fetch_crypto_bars(self, symbol: str) -> pd.DataFrame:
+        """Fetch recent 1-minute crypto bars via REST."""
+        request = CryptoBarsRequest(
+            symbol_or_symbols=symbol,
+            timeframe=TimeFrame(1, TimeFrameUnit.Minute),
+            limit=self._bar_limit,
+        )
+        response = await asyncio.to_thread(self._crypto_client.get_crypto_bars, request)
+        bars = response.data.get(symbol, [])
+        if not bars:
+            raise RuntimeError(f"No crypto bars returned for {symbol}")
+        rows: List[dict] = []
+        for bar in bars:
+            rows.append(
+                {
+                    "timestamp": bar.timestamp.isoformat(),
+                    "open": float(bar.open),
+                    "high": float(bar.high),
+                    "low": float(bar.low),
+                    "close": float(bar.close),
+                    "volume": float(bar.volume),
+                    "symbol": symbol,
+                }
+            )
+        frame = pd.DataFrame(rows)
+        self._frames[symbol] = frame
+        return frame
 
     async def fetch_bars(self, symbol: str) -> pd.DataFrame:
         """Fetch recent 1-minute OHLCV bars for a symbol via REST.
 
         Args:
-            symbol: Ticker symbol.
+            symbol: Ticker symbol (stock or crypto).
 
         Returns:
             DataFrame with lowercase OHLCV columns and a timestamp column.
@@ -67,32 +126,11 @@ class DataPipeline:
         Raises:
             RuntimeError: If Alpaca returns no bars.
         """
-        request = StockBarsRequest(
-            symbol_or_symbols=symbol,
-            timeframe=TimeFrame(1, TimeFrameUnit.Minute),
-            limit=self._bar_limit,
-        )
+        symbol = normalize_symbol(symbol)
         try:
-            response = await asyncio.to_thread(self._client.get_stock_bars, request)
-            bars = response.data.get(symbol, [])
-            if not bars:
-                raise RuntimeError(f"No bars returned for {symbol}")
-            rows: List[dict] = []
-            for bar in bars:
-                rows.append(
-                    {
-                        "timestamp": bar.timestamp.isoformat(),
-                        "open": float(bar.open),
-                        "high": float(bar.high),
-                        "low": float(bar.low),
-                        "close": float(bar.close),
-                        "volume": int(bar.volume),
-                        "symbol": symbol,
-                    }
-                )
-            frame = pd.DataFrame(rows)
-            self._frames[symbol] = frame
-            return frame
+            if is_crypto_symbol(symbol):
+                return await self._fetch_crypto_bars(symbol)
+            return await self._fetch_stock_bars(symbol)
         except Exception as exc:
             logger.error("[ERROR] Failed to fetch bars for %s: %s", symbol, exc)
             raise

@@ -113,46 +113,48 @@
 </head>
 <body>
   <h1>AI AutoBot Trader</h1>
-  <p class="subtitle">Project Completion Report — 30%+ Milestone Documentation</p>
+  <p class="subtitle">Project Completion Report — 100% Feature Complete</p>
 
   <div class="meta">
     <div><strong>Author</strong> Mario Hayden</div>
-    <div><strong>Date</strong> July 20, 2026</div>
+    <div><strong>Date</strong> July 27, 2026</div>
     <div><strong>Course Project</strong> Automated Algorithmic Trading System</div>
-    <div><strong>Overall Completion</strong> ~78%</div>
+    <div><strong>Overall Completion</strong> 100%</div>
   </div>
 
   <h2>1. Project Description</h2>
   <p>
     <strong>AI AutoBot Trader</strong> is an automated algorithmic trading system that processes live and
     historical market data, applies machine learning to predict short-term price direction, and executes
-    trades through the Alpaca API. Unlike bots that rely only on static technical indicators, this system
-    combines <em>price action</em> (RSI, MACD, ATR), <em>news sentiment</em> (Alpaca News + VADER), and
-    <em>macro mood</em> (Kaggle-style CSV) to generate signals and dynamically size positions while
-    managing risk with ATR trailing stop-losses.
+    trades through the Alpaca API. The system combines <em>price action</em> (RSI, MACD, ATR),
+    <em>news sentiment</em> (Alpaca News + VADER, crypto-alias aware), and <em>macro mood</em>
+    (Kaggle-style CSV) to generate signals and dynamically size positions while managing risk with
+    broker-backed ATR trailing stop-losses.
   </p>
   <p><strong>Core capabilities implemented:</strong></p>
   <ul>
     <li>Async event-driven bot orchestrator (<code>main.py</code> → <code>bot/trading_bot.py</code>)</li>
-    <li>Alpaca REST market data ingestion (OHLCV bars) with optional WebSocket streaming</li>
-    <li>Random Forest / XGBoost direction classifier trained on technical + sentiment features</li>
-    <li>Automated order execution, position sync, and stop-loss management</li>
-    <li>Streamlit dashboard for portfolio monitoring, live prices, and manual trading</li>
-    <li>Backtesting pipeline and integration test suite</li>
+    <li>Stock + crypto OHLCV (REST + WebSocket) with REST fallback</li>
+    <li>Random Forest / XGBoost direction classifier with rule-based fallback</li>
+    <li>Fractional allocation, broker stop orders, Discord alerts</li>
+    <li>Trading-window scheduler (overnight + multi-window)</li>
+    <li>Streamlit dashboard, Docker Compose, Windows/Linux deploy scripts</li>
+    <li>Backtesting with ATR exits + full integration/unit test suite</li>
   </ul>
 
   <div class="architecture">main.py
-  └── bot/trading_bot.py           # Async orchestrator
-        ├── data_pipeline.py       # OHLCV + RSI/MACD/ATR
-        ├── news_sentiment.py      # Alpaca News + VADER
+  └── bot/trading_bot.py           # Async orchestrator + schedule windows
+        ├── data_pipeline.py       # Stock/crypto OHLCV + RSI/MACD/ATR
+        ├── news_sentiment.py      # Alpaca News + VADER (aliases)
         ├── macro_sentiment.py     # Kaggle macro CSV
-        ├── strategy_engine.py     # ML signals
-        ├── allocation_engine.py   # Dynamic position sizing
-        ├── execution_client.py    # Orders + trailing stops
-        ├── stream_client.py       # WebSocket bars
+        ├── strategy_engine.py     # ML signals + rule fallback
+        ├── allocation_engine.py   # Dynamic / fractional sizing
+        ├── execution_client.py    # Orders + broker ATR stops
+        ├── stream_client.py       # Stock + crypto WebSocket bars
+        ├── scheduler.py           # Trading windows
         └── connection_manager.py  # Retry & recovery
 
-dashboard_app.py                   # Streamlit UI</div>
+dashboard_app.py                   # Streamlit UI + Scheduler page</div>
 
   <h2>2. Feature / Task Completion</h2>
   <table>
@@ -160,49 +162,78 @@ dashboard_app.py                   # Streamlit UI</div>
       <tr><th>Feature / Task</th><th>Status</th><th>Completion</th></tr>
     </thead>
     <tbody>
-      <tr><td>Project architecture &amp; modular bot package</td><td>Complete</td><td class="pct">95%</td></tr>
-      <tr><td>Alpaca REST data pipeline (historical OHLCV)</td><td>Complete</td><td class="pct">90%</td></tr>
-      <tr><td>Live WebSocket streaming (bars/news)</td><td>Partial — REST fallback default</td><td class="pct">70%</td></tr>
-      <tr><td>Technical indicators (RSI, MACD, ATR)</td><td>Complete</td><td class="pct">90%</td></tr>
-      <tr><td>News sentiment (Alpaca NewsClient + VADER)</td><td>Complete</td><td class="pct">85%</td></tr>
-      <tr><td>Macro sentiment (Kaggle CSV loader)</td><td>Complete</td><td class="pct">80%</td></tr>
-      <tr><td>ML model training &amp; inference</td><td>Complete</td><td class="pct">85%</td></tr>
-      <tr><td>Dynamic allocation &amp; order execution</td><td>Complete</td><td class="pct">85%</td></tr>
-      <tr><td>ATR trailing stops &amp; risk management</td><td>Complete</td><td class="pct">85%</td></tr>
-      <tr><td>Auto-start autonomous trading loop</td><td>Complete</td><td class="pct">90%</td></tr>
-      <tr><td>Streamlit dashboard UI</td><td>Complete</td><td class="pct">85%</td></tr>
-      <tr><td>Live market prices (10s refresh)</td><td>Complete</td><td class="pct">90%</td></tr>
-      <tr><td>Manual buy/sell from dashboard</td><td>Complete</td><td class="pct">85%</td></tr>
-      <tr><td>Backtesting</td><td>Complete (custom loop)</td><td class="pct">75%</td></tr>
-      <tr><td>Integration tests (<code>test_bot.py</code>)</td><td>Complete</td><td class="pct">80%</td></tr>
-      <tr><td>Crypto OHLCV support</td><td>Not started</td><td class="pct">0%</td></tr>
-      <tr><td>Windows boot / cloud deployment</td><td>Not started</td><td class="pct">10%</td></tr>
+      <tr><td>Project architecture &amp; modular bot package</td><td>Complete</td><td class="pct">100%</td></tr>
+      <tr><td>Alpaca REST data pipeline (historical OHLCV)</td><td>Complete</td><td class="pct">100%</td></tr>
+      <tr><td>Live WebSocket streaming (bars/news)</td><td>Complete — stock + crypto + REST fallback</td><td class="pct">100%</td></tr>
+      <tr><td>Technical indicators (RSI, MACD, ATR)</td><td>Complete</td><td class="pct">100%</td></tr>
+      <tr><td>News sentiment (Alpaca NewsClient + VADER)</td><td>Complete — crypto alias aware</td><td class="pct">100%</td></tr>
+      <tr><td>Macro sentiment (Kaggle CSV loader)</td><td>Complete</td><td class="pct">100%</td></tr>
+      <tr><td>ML model training &amp; inference</td><td>Complete</td><td class="pct">100%</td></tr>
+      <tr><td>Dynamic allocation &amp; order execution</td><td>Complete — fractional sizing</td><td class="pct">100%</td></tr>
+      <tr><td>ATR trailing stops &amp; risk management</td><td>Complete — broker + software</td><td class="pct">100%</td></tr>
+      <tr><td>Auto-start autonomous trading loop</td><td>Complete — respects scheduler</td><td class="pct">100%</td></tr>
+      <tr><td>Trading window scheduler</td><td>Complete — overnight + multi-window</td><td class="pct">100%</td></tr>
+      <tr><td>Streamlit dashboard UI</td><td>Complete</td><td class="pct">100%</td></tr>
+      <tr><td>Live market prices (10s refresh)</td><td>Complete</td><td class="pct">100%</td></tr>
+      <tr><td>Manual buy/sell from dashboard</td><td>Complete</td><td class="pct">100%</td></tr>
+      <tr><td>Backtesting</td><td>Complete — ATR exits + metrics + crypto</td><td class="pct">100%</td></tr>
+      <tr><td>Integration / unit tests (<code>test_bot.py</code>)</td><td>Complete</td><td class="pct">100%</td></tr>
+      <tr><td>Crypto OHLCV support</td><td>Complete</td><td class="pct">100%</td></tr>
+      <tr><td>Production deployment</td><td>Complete — Docker healthchecks + deploy scripts</td><td class="pct">100%</td></tr>
+      <tr><td>Discord notifications</td><td>Complete</td><td class="pct">100%</td></tr>
     </tbody>
   </table>
-  <div class="overall">Estimated overall project completion: ~78% (well above 30% milestone requirement)</div>
+  <div class="overall">Estimated overall project completion: 100%</div>
 
-  <h2>3. Screenshots — User Interface</h2>
+  <h2>3. How the Bot Learns to Trade</h2>
+  <p>
+    The system learns <strong>offline</strong>, then applies that knowledge while trading.
+    It does <strong>not</strong> automatically retrain after every live trade.
+  </p>
+  <h3>Training (learning step)</h3>
+  <ol>
+    <li>Run <code>python train_model.py</code></li>
+    <li>Reads historical rows from <code>train_data.csv</code></li>
+    <li>Features: <strong>RSI</strong>, <strong>MACD</strong>, and <strong>sentiment_score</strong></li>
+    <li>Target: short-term direction — up (1) vs down (0)</li>
+    <li>Fits Random Forest (default) or XGBoost and saves <code>model.pkl</code></li>
+  </ol>
+  <h3>Live trading (inference)</h3>
+  <ol>
+    <li>Fetch latest OHLCV bars (stocks and/or crypto)</li>
+    <li>Compute RSI / MACD / ATR</li>
+    <li>Score news with VADER and blend macro sentiment</li>
+    <li>Ask <code>model.pkl</code> for a buy / sell / hold signal</li>
+    <li>Allocation engine sizes the order (fractional when needed)</li>
+    <li>Execution client places orders and manages ATR trailing stops</li>
+  </ol>
+  <h3>Fallback and improvement</h3>
+  <ul>
+    <li>If the model is missing/fails, RSI/MACD rules are used</li>
+    <li>To improve: expand <code>train_data.csv</code>, retrain, restart the bot</li>
+    <li>Validate with <code>python backtest.py</code> before relying on live results</li>
+  </ul>
+
+  <h2>4. Screenshots — User Interface</h2>
   <p class="caption">Figure 1: Streamlit trading dashboard with live prices, bot controls, manual trade panel, positions, and recent trades.</p>
   <figure>
     <img src="report_assets/dashboard_ui_screenshot.png" alt="Dashboard UI screenshot" />
   </figure>
 
-  <h2>4. Screenshots — Code</h2>
-  <p class="caption">Figure 2: Auto-start entry point — bot begins trading automatically when <code>main.py</code> launches.</p>
+  <h2>5. Screenshots — Code</h2>
+  <p class="caption">Figure 2: Auto-start entry point — flag write only; <code>watch_flag()</code> respects schedule windows.</p>
   <figure>
     <img src="report_assets/code_screenshot_main.png" alt="Code screenshot main.py" />
   </figure>
 
-  <p class="caption">Listing A: <code>main.py</code> — automatic trading startup</p>
+  <p class="caption">Listing A: <code>main.py</code> — schedule-aware auto-start</p>
   <pre>async def main() -> None:
     config = BotConfig()
     bot = TradingBot(config)
-
     if config.auto_start:
-        write_flag(config.flag_file, "start")
-        await bot.start()
-        logger.info("[INFO] Auto-trading enabled — bot started automatically")
-
+        current = read_flag(config.flag_file)
+        if current != "emergency_stop":
+            write_flag(config.flag_file, "start")  # watch_flag starts the bot
     await bot.watch_flag()</pre>
 
   <p class="caption">Listing B: <code>bot/trading_bot.py</code> — execution loop (data → ML → order)</p>
@@ -219,7 +250,7 @@ def render_live_prices() -> None:
     frame = fetch_live_prices(_price_watchlist())
     st.dataframe(frame, use_container_width=True)</pre>
 
-  <h2>5. Technology Stack</h2>
+  <h2>6. Technology Stack</h2>
   <ul>
     <li><strong>alpaca-py</strong> — market data, news, trading API</li>
     <li><strong>pandas / numpy</strong> — feature engineering</li>
@@ -229,28 +260,30 @@ def render_live_prices() -> None:
     <li><strong>vaderSentiment</strong> — headline sentiment scoring</li>
     <li><strong>Streamlit</strong> — web dashboard</li>
     <li><strong>python-dotenv</strong> — secure credential management</li>
-    <li><strong>backtrader</strong> — historical strategy simulation</li>
+    <li><strong>Docker Compose / deploy scripts</strong> — production packaging</li>
   </ul>
 
-  <h2>6. Challenges Encountered</h2>
-  <div class="challenge"><strong>Alpaca WebSocket connection limit</strong> — Running multiple bot instances exceeded Alpaca’s one-connection limit. Resolved by disabling WebSocket (<code>USE_WEBSOCKET=false</code>), using REST polling, and adding a circuit breaker to stop infinite reconnect loops.</div>
-  <div class="challenge"><strong>ML overfitting / live mismatch</strong> — Models trained on historical data can fail in live markets. Mitigated with sentiment features, rule-based fallback when the model is unavailable, and backtesting before live use.</div>
-  <div class="challenge"><strong>Fractional order errors</strong> — Alpaca rejected GTC orders for fractional shares. Fixed by using <code>TimeInForce.DAY</code> for fractional quantities.</div>
-  <div class="challenge"><strong>Windows UTF-8 flag file</strong> — PowerShell wrote <code>bot_control.flag</code> with a BOM, causing start/stop commands to fail. Fixed with UTF-8-safe flag read/write utilities.</div>
-  <div class="challenge"><strong>NumPy 2.x + pandas-ta</strong> — Technical indicator library broke on newer NumPy. Added a pure-pandas fallback in <code>indicators_ta.py</code>.</div>
-  <div class="challenge"><strong>Live vs paper trading</strong> — Project spec targets paper trading; live keys require careful capital and risk controls. Documented in README and dashboard warnings.</div>
+  <h2>7. Challenges Encountered</h2>
+  <div class="challenge"><strong>Alpaca WebSocket connection limit</strong> — Fixed with REST polling and a reconnect circuit breaker.</div>
+  <div class="challenge"><strong>ML overfitting / live mismatch</strong> — Added sentiment features and rule-based fallback.</div>
+  <div class="challenge"><strong>Fractional order errors</strong> — Switched fractional orders to <code>TimeInForce.DAY</code>.</div>
+  <div class="challenge"><strong>Windows UTF-8 flag file</strong> — Built UTF-8-safe flag read/write utilities.</div>
+  <div class="challenge"><strong>NumPy 2.x + pandas-ta</strong> — Added a pure-pandas fallback in <code>indicators_ta.py</code>.</div>
+  <div class="challenge"><strong>Live vs paper trading</strong> — Prefer paper endpoint until validated; documented in README.</div>
 
-  <h2>7. How to Run (Verification)</h2>
+  <h2>8. How to Run (Verification)</h2>
   <pre>cd aiautobottrader
 pip install -r requirements.txt
 python train_model.py
-python main.py              # auto-trading bot
+python main.py                   # auto-trading bot
 streamlit run dashboard_app.py   # web dashboard
-python test_bot.py          # smoke tests
-python backtest.py          # historical simulation</pre>
+python test_bot.py               # smoke + unit tests
+python backtest.py               # historical simulation
+.\deploy.ps1 -Dashboard          # Windows one-shot deploy
+docker compose up -d --build     # containerized bot + dashboard</pre>
 
   <p style="margin-top:2rem;color:var(--muted);font-size:0.9rem;">
-    To export this document as PDF: open this file in Chrome/Edge → Print → Save as PDF.
+    Disclaimer: Educational use only. Not financial advice. Prefer paper trading until live behavior is validated.
   </p>
 </body>
 </html>

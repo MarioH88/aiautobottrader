@@ -125,10 +125,10 @@ def build() -> Path:
     slide = prs.slides.add_slide(prs.slide_layouts[0])
     slide.shapes.title.text = "AI AutoBot Trader"
     slide.placeholders[1].text = (
-        "Project Progress Report (30%+ Milestone)\n"
+        "Project Completion Report (100%)\n"
         "Author: Mario Hayden\n"
-        "Date: July 20, 2026\n"
-        "Overall Completion: ~78%"
+        "Date: July 27, 2026\n"
+        "Overall Completion: 100%"
     )
     slide.shapes.title.text_frame.paragraphs[0].font.size = Pt(40)
     slide.shapes.title.text_frame.paragraphs[0].font.color.rgb = ACCENT
@@ -142,13 +142,13 @@ def build() -> Path:
         slide,
         1.15,
         [
-            "Processes live and historical OHLCV bar data via Alpaca Market Data API",
-            "Ingests financial news via Alpaca NewsClient and scores headlines with VADER",
+            "Processes live and historical OHLCV (stocks + crypto) via Alpaca",
+            "Ingests financial news via Alpaca NewsClient and scores with VADER",
             "Loads macro sentiment from a Kaggle-style CSV export",
-            "Uses Random Forest / XGBoost plus RSI, MACD, and ATR for short-term signals",
-            "Executes trades through Alpaca with dynamic position sizing",
-            "Manages risk with ATR trailing stop-losses",
-            "Includes a Streamlit dashboard for monitoring and manual trading",
+            "Uses Random Forest / XGBoost plus RSI, MACD, and ATR for signals",
+            "Executes trades with dynamic / fractional position sizing",
+            "Manages risk with broker-backed ATR trailing stop-losses",
+            "Includes Streamlit dashboard, scheduler, Docker, and deploy scripts",
         ],
         size=15,
     )
@@ -161,13 +161,14 @@ def build() -> Path:
         1.15,
         "main.py\n"
         "  -> bot/trading_bot.py\n"
-        "       data_pipeline.py       (OHLCV + indicators)\n"
+        "       data_pipeline.py       (stock/crypto OHLCV)\n"
         "       news_sentiment.py      (Alpaca News + VADER)\n"
         "       macro_sentiment.py     (Kaggle CSV)\n"
         "       strategy_engine.py     (ML signals)\n"
-        "       allocation_engine.py   (position sizing)\n"
-        "       execution_client.py    (orders + stops)\n"
-        "       stream_client.py       (WebSocket bars)\n"
+        "       allocation_engine.py   (fractional sizing)\n"
+        "       execution_client.py    (orders + broker stops)\n"
+        "       stream_client.py       (stock/crypto WebSocket)\n"
+        "       scheduler.py           (trading windows)\n"
         "       connection_manager.py  (retry / recovery)\n"
         "  dashboard_app.py           (Streamlit UI)",
         height=4.8,
@@ -176,14 +177,14 @@ def build() -> Path:
     # --- Slides 4-5: Feature tables (split to avoid overflow) ---
     rows_a = [
         ("Feature / Task", "Done"),
-        ("Modular async bot architecture", "95%"),
-        ("Alpaca REST OHLCV pipeline", "90%"),
-        ("WebSocket live streaming", "70%"),
-        ("Technical indicators (RSI/MACD/ATR)", "90%"),
-        ("News sentiment (VADER)", "85%"),
-        ("Macro sentiment (Kaggle CSV)", "80%"),
-        ("ML training and inference", "85%"),
-        ("Order execution and allocation", "85%"),
+        ("Modular async bot architecture", "100%"),
+        ("Alpaca REST OHLCV pipeline", "100%"),
+        ("WebSocket live streaming", "100%"),
+        ("Technical indicators (RSI/MACD/ATR)", "100%"),
+        ("News sentiment (VADER + crypto aliases)", "100%"),
+        ("Macro sentiment (Kaggle CSV)", "100%"),
+        ("ML training and inference", "100%"),
+        ("Order execution and allocation", "100%"),
     ]
     slide = _blank_slide(prs)
     _add_header(slide, "Feature Completion (Part 1)", "Core trading pipeline")
@@ -191,19 +192,20 @@ def build() -> Path:
 
     rows_b = [
         ("Feature / Task", "Done"),
-        ("ATR trailing stops", "85%"),
-        ("Auto-start trading (AUTO_START)", "90%"),
-        ("Streamlit dashboard UI", "85%"),
-        ("Live market prices", "90%"),
-        ("Manual buy/sell UI", "85%"),
-        ("Backtesting", "75%"),
-        ("Integration tests", "80%"),
-        ("Crypto OHLCV support", "0%"),
-        ("Production deployment", "10%"),
-        ("OVERALL PROJECT", "~78%"),
+        ("ATR trailing stops (broker + software)", "100%"),
+        ("Auto-start trading (AUTO_START)", "100%"),
+        ("Trading window scheduler", "100%"),
+        ("Streamlit dashboard UI", "100%"),
+        ("Live market prices", "100%"),
+        ("Manual buy/sell UI", "100%"),
+        ("Backtesting", "100%"),
+        ("Integration / unit tests", "100%"),
+        ("Crypto OHLCV support", "100%"),
+        ("Production deployment", "100%"),
+        ("OVERALL PROJECT", "100%"),
     ]
     slide = _blank_slide(prs)
-    _add_header(slide, "Feature Completion (Part 2)", "UI, testing, and remaining work")
+    _add_header(slide, "Feature Completion (Part 2)", "UI, testing, crypto, and deployment")
     _add_table(slide, 1.15, rows_b)
 
     # --- Slide 6: UI ---
@@ -213,7 +215,7 @@ def build() -> Path:
 
     # --- Slide 7: Code screenshot ---
     slide = _blank_slide(prs)
-    _add_header(slide, "Code Screenshot", "main.py - auto-start trading on launch")
+    _add_header(slide, "Code Screenshot", "main.py - schedule-aware auto-start")
     _add_picture_fit(slide, ASSETS / "code_screenshot_main.png", top=1.05, max_height=5.8)
 
     # --- Slide 8: Code listing ---
@@ -231,7 +233,26 @@ def build() -> Path:
         height=3.2,
     )
 
-    # --- Slide 9: Tech stack ---
+    # --- Slide 9: How the bot learns ---
+    slide = _blank_slide(prs)
+    _add_header(slide, "How the Bot Learns to Trade", "Offline training, then live inference")
+    _add_bullets(
+        slide,
+        1.15,
+        [
+            "1. Training (offline): python train_model.py reads train_data.csv",
+            "2. Features: RSI, MACD, and news/macro sentiment_score",
+            "3. Target: short-term price direction (up = 1, down = 0)",
+            "4. Model: Random Forest (default) or XGBoost → saved as model.pkl",
+            "5. Live trading: bot computes the same features and asks model.pkl for buy/sell/hold",
+            "6. Allocation sizes the order; ATR trailing stops manage risk",
+            "7. Fallback: if the model is missing, RSI/MACD rules still trade",
+            "Note: the bot does not auto-retrain after each trade — retrain manually to improve",
+        ],
+        size=15,
+    )
+
+    # --- Slide 10: Tech stack ---
     slide = _blank_slide(prs)
     _add_header(slide, "Technology Stack", "Frameworks and libraries used")
     _add_bullets(
@@ -251,7 +272,7 @@ def build() -> Path:
         size=15,
     )
 
-    # --- Slide 10: Challenges ---
+    # --- Slide 11: Challenges ---
     slide = _blank_slide(prs)
     _add_header(slide, "Challenges Encountered", "Problems faced and how they were resolved")
     _add_bullets(
@@ -272,7 +293,7 @@ def build() -> Path:
         size=14,
     )
 
-    # --- Slide 11: How to run ---
+    # --- Slide 12: How to run ---
     slide = _blank_slide(prs)
     _add_header(slide, "How to Run", "Commands to verify the project")
     _add_code_block(
@@ -284,22 +305,23 @@ def build() -> Path:
         "python main.py\n"
         "streamlit run dashboard_app.py\n"
         "python test_bot.py\n"
-        "python backtest.py",
-        height=3.5,
+        "python backtest.py\n"
+        "docker compose up -d --build",
+        height=3.8,
     )
     _add_bullets(
         slide,
-        4.85,
+        5.15,
         [
-            "Next steps: crypto support, paper trading by default, cloud deployment",
+            "Status: crypto, scheduler, Docker deploy, and broker ATR stops complete (100%)",
         ],
         size=14,
     )
 
-    # --- Slide 12: Thank you ---
+    # --- Slide 13: Thank you ---
     slide = prs.slides.add_slide(prs.slide_layouts[0])
     slide.shapes.title.text = "Thank You"
-    slide.placeholders[1].text = "AI AutoBot Trader\nMario Hayden\n~78% Complete"
+    slide.placeholders[1].text = "AI AutoBot Trader\nMario Hayden\n100% Complete"
     slide.shapes.title.text_frame.paragraphs[0].font.color.rgb = ACCENT
     slide.shapes.title.text_frame.paragraphs[0].font.size = Pt(44)
     for p in slide.placeholders[1].text_frame.paragraphs:

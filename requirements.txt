@@ -1,7 +1,7 @@
 # Autonomous AI Trading Bot — MVP Stack
-alpaca-py>=0.13.0          # Official Alpaca SDK (REST + WebSocket)
+alpaca-py>=0.43.0          # Official Alpaca SDK (REST + WebSocket)
 pandas>=2.0.0
-numpy>=1.26.0
+numpy>=1.26.0,<2.3         # Compatible with pandas-ta / numba
 pandas-ta>=0.3.14b         # Technical analysis (RSI, MACD) — falls back to pure pandas if unavailable
 pydantic>=2.0.0            # Runtime schema validation
 python-dotenv>=1.0.0
@@ -16,7 +16,7 @@ backtrader
 yfinance>=1.5.0
 tqdm
 
-# Legacy / optional tooling (dashboards, sentiment — out of MVP scope)
+# Dashboards & optional tooling
 streamlit>=1.30.0
 streamlit-lottie
 requests>=2.31.0
@@ -26,6 +26,3 @@ tweepy
 praw
 textblob
 beautifulsoup4
-
-# Deprecated legacy SDK — kept for older scripts only
-alpaca-trade-api>=3.0.0
