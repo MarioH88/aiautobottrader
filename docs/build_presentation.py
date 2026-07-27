@@ -202,6 +202,7 @@ def build() -> Path:
         ("Integration / unit tests", "100%"),
         ("Crypto OHLCV support", "100%"),
         ("Production deployment", "100%"),
+        ("Discord notifications", "100%"),
         ("OVERALL PROJECT", "100%"),
     ]
     slide = _blank_slide(prs)
