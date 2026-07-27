@@ -1,8 +1,141 @@
 # AI AutoBot Trader
 
-Automated algorithmic trading system that processes live market data, uses machine learning to predict short-term price direction, and executes trades via the Alpaca API. The bot combines **news sentiment** (Alpaca News + VADER), **macro mood** (Kaggle-style CSV), and **price action** (RSI/MACD/ATR) to dynamically size positions while managing risk with **broker-backed ATR trailing stop-losses**.
+## Project Title and Purpose
 
-Supports **stocks and crypto** (e.g. `AAPL`, `BTC/USD`), a **dashboard scheduler** (including overnight windows), Discord alerts, and **Docker / Windows / Linux** deploy paths.
+**AI AutoBot Trader** is an automated algorithmic trading system that:
+
+- Pulls live and historical market data (stocks and crypto) from the **Alpaca** API
+- Scores financial news with **VADER** sentiment and blends optional macro mood data
+- Uses **machine learning** (Random Forest / XGBoost) plus RSI, MACD, and ATR to generate buy/sell/hold signals
+- Executes trades with dynamic / fractional position sizing and **ATR trailing stop-losses**
+- Provides a **Streamlit dashboard** for live prices, manual trades, and a trading-window scheduler
+
+**Purpose:** demonstrate an end-to-end ML trading pipeline (data → features → model → risk → execution → UI) for education and paper-trading experiments. This is **not** financial advice.
+
+---
+
+## Team Members
+
+| Name | GitHub Username |
+|------|-----------------|
+| Mario Hayden | [MarioH88](https://github.com/MarioH88) |
+
+Repository: [github.com/MarioH88/aiautobottrader](https://github.com/MarioH88/aiautobottrader)
+
+---
+
+## Important Setup Instructions
+
+### Requirements
+
+- Python **3.10+** (3.12 recommended)
+- An [Alpaca](https://alpaca.markets/) account (**paper trading keys strongly recommended**)
+- Git (to clone the repo)
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/MarioH88/aiautobottrader.git
+cd aiautobottrader
+```
+
+### 2. Create a virtual environment and install dependencies
+
+```bash
+python -m venv .venv
+```
+
+**Windows (PowerShell):**
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+**macOS / Linux:**
+
+```bash
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 3. Configure secrets (required)
+
+API keys are **not** stored in Git. Copy the example env file and add your credentials:
+
+```bash
+cp .env.example .env
+```
+
+On Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Edit `.env` and set at least:
+
+| Variable | Required | Notes |
+|----------|----------|--------|
+| `APCA_API_KEY_ID` | Yes | From Alpaca → API Keys |
+| `APCA_API_SECRET_KEY` | Yes | Keep secret; never commit |
+| `APCA_API_BASE_URL` | Yes | Paper: `https://paper-api.alpaca.markets` · Live: `https://api.alpaca.markets` |
+| `TRADING_SYMBOLS` | Optional | Default `AAPL,TSLA` (crypto e.g. `BTC/USD` also supported) |
+| `DISCORD_WEBHOOK_URL` | Optional | Trade / failure alerts |
+
+> Use the **paper** base URL until you have validated the bot.
+
+### 4. Train the ML model
+
+```bash
+python train_model.py
+```
+
+This reads `train_data.csv` and writes `model.pkl` (also gitignored — regenerate locally).
+
+---
+
+## How to Run the Code
+
+### Trading bot (background loop)
+
+```bash
+python main.py
+```
+
+Control the bot with `bot_control.flag`: `start` | `stop` | `emergency_stop`.  
+Trading windows are defined in `scheduler_config.json` (also editable in the dashboard **Scheduler** page).
+
+### Streamlit dashboard
+
+```bash
+streamlit run dashboard_app.py
+```
+
+Then open the URL shown in the terminal (usually `http://localhost:8501`).
+
+### Tests and backtest
+
+```bash
+python test_bot.py
+python backtest.py
+```
+
+### Windows one-shot deploy helper
+
+```powershell
+.\deploy.ps1 -Dashboard
+```
+
+### Docker
+
+```bash
+docker compose up -d --build
+```
+
+Ensure a valid `.env` is present in the project root before starting containers.
+
+---
 
 ## How the Bot Learns to Trade
 
@@ -12,58 +145,7 @@ Supports **stocks and crypto** (e.g. `AAPL`, `BTC/USD`), a **dashboard scheduler
 4. **Fallback:** if the model is unavailable, RSI/MACD rules still trade
 5. **Improve:** update training data, retrain, restart — the bot does not auto-relearn after each trade
 
-## Setup
-
-```bash
-cd aiautobottrader
-python -m venv .venv
-# Windows: .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-cp .env.example .env   # add Alpaca keys (paper recommended)
-python train_model.py
-```
-
-Windows one-shot:
-
-```powershell
-.\deploy.ps1 -Dashboard
-```
-
-Docker:
-
-```bash
-docker compose up -d --build
-```
-
-## Run
-
-```bash
-python main.py
-python test_bot.py
-python backtest.py
-streamlit run dashboard_app.py
-```
-
-Control via `bot_control.flag`: `start` | `stop` | `emergency_stop`
-
-Scheduler windows live in `scheduler_config.json` (editable in the dashboard **Scheduler** page). `AUTO_START` only writes the flag — `watch_flag()` always respects schedule windows and never overrides `emergency_stop`.
-
-## Windows Task Scheduler (auto-restart)
-
-1. Open **Task Scheduler** → Create Task
-2. Trigger: At startup (or At log on)
-3. Action: Start a program
-   - Program: `C:\Users\<you>\...\aiautobottrader\.venv\Scripts\python.exe`
-   - Arguments: `main.py`
-   - Start in: `C:\Users\<you>\...\aiautobottrader`
-4. Settings: **If the task fails, restart every 1 minute** (set retry count as needed)
-5. Ensure `.env` exists in the Start-in folder
-
-Optional CLI equivalent:
-
-```powershell
-schtasks /Create /TN "AIAutoBotTrader" /SC ONSTART /RL HIGHEST /TR "\"$PWD\.venv\Scripts\python.exe\" main.py" /WD "$PWD"
-```
+---
 
 ## Key Environment Variables
 
@@ -78,14 +160,7 @@ schtasks /Create /TN "AIAutoBotTrader" /SC ONSTART /RL HIGHEST /TR "\"$PWD\.venv
 | `MAX_ALLOCATION_PCT` | `0.10` | Max buying-power fraction per symbol |
 | `REST_FALLBACK_INTERVAL_SEC` | `120` | REST poll when WebSocket down |
 
-## Risk & Resilience
-
-- Broker stop orders on buy + software ATR trail with cancel/replace
-- Orphan order cancellation on disconnect, then stop re-arm
-- REST fallback when WebSocket slots are exhausted
-- Scheduler can pause trading outside configured hours (overnight supported)
-- Fractional sizing for crypto and low buying-power accounts
-- Discord webhook notifications on fills / failures
+---
 
 ## Disclaimer
 
