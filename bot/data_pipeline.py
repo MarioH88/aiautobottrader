@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
 import pandas as pd
+from alpaca.data.enums import DataFeed
 from alpaca.data.historical import CryptoHistoricalDataClient, StockHistoricalDataClient
 from alpaca.data.requests import CryptoBarsRequest, StockBarsRequest
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
-from bot.indicators_ta import compute_atr, compute_rsi_macd
+from bot.features import build_features, feature_row
+from bot.indicators_ta import compute_atr
 from bot.schemas import MarketBarState
 from bot.symbols import is_crypto_symbol, normalize_symbol
 
@@ -25,22 +29,37 @@ class DataPipeline:
         self,
         api_key: str,
         api_secret: str,
-        bar_limit: int = 120,
+        bar_limit: int = 200,
         atr_period: int = 14,
+        timeframe_min: int = 5,
+        data_feed: str = "iex",
     ) -> None:
         """Initialize the data pipeline.
 
         Args:
             api_key: Alpaca API key identifier.
             api_secret: Alpaca API secret key.
-            bar_limit: Number of 1-minute bars to pull per REST request.
+            bar_limit: Number of bars to pull per REST request (>= feature warm-up).
             atr_period: ATR lookback for trailing stop calculations.
+            timeframe_min: Bar size in minutes; must match the model's training data.
+            data_feed: ``"iex"`` (free tier) or ``"sip"`` (paid) for stock bars.
         """
         self._stock_client = StockHistoricalDataClient(api_key, api_secret)
         self._crypto_client = CryptoHistoricalDataClient(api_key, api_secret)
         self._bar_limit = bar_limit
         self._atr_period = atr_period
+        self._timeframe = TimeFrame(max(1, int(timeframe_min)), TimeFrameUnit.Minute)
+        self._feed = DataFeed.SIP if data_feed == "sip" else DataFeed.IEX
         self._frames: Dict[str, pd.DataFrame] = {}
+        # Calendar days needed to cover bar_limit bars of regular-session trading, with slack
+        # for weekends/holidays. Alpaca's `limit` counts from `start`, so we fetch a window
+        # and keep the most recent bar_limit bars ourselves.
+        session_bars_per_day = max(1, 390 // max(1, int(timeframe_min)))
+        trading_days = math.ceil(bar_limit / session_bars_per_day)
+        self._lookback_days = trading_days * 2 + 4
+
+    def _window_start(self) -> datetime:
+        return datetime.now(timezone.utc) - timedelta(days=self._lookback_days)
 
     def ingest_stream_frame(self, symbol: str, frame: pd.DataFrame) -> pd.DataFrame:
         """Merge a WebSocket-backed frame into the pipeline cache.
@@ -59,14 +78,15 @@ class DataPipeline:
         return self._frames[key]
 
     async def _fetch_stock_bars(self, symbol: str) -> pd.DataFrame:
-        """Fetch recent 1-minute stock bars via REST."""
+        """Fetch recent stock bars via REST."""
         request = StockBarsRequest(
             symbol_or_symbols=symbol,
-            timeframe=TimeFrame(1, TimeFrameUnit.Minute),
-            limit=self._bar_limit,
+            timeframe=self._timeframe,
+            start=self._window_start(),
+            feed=self._feed,
         )
         response = await asyncio.to_thread(self._stock_client.get_stock_bars, request)
-        bars = response.data.get(symbol, [])
+        bars = list(response.data.get(symbol, []))[-self._bar_limit :]
         if not bars:
             raise RuntimeError(f"No bars returned for {symbol}")
         rows: List[dict] = []
@@ -87,14 +107,14 @@ class DataPipeline:
         return frame
 
     async def _fetch_crypto_bars(self, symbol: str) -> pd.DataFrame:
-        """Fetch recent 1-minute crypto bars via REST."""
+        """Fetch recent crypto bars via REST."""
         request = CryptoBarsRequest(
             symbol_or_symbols=symbol,
-            timeframe=TimeFrame(1, TimeFrameUnit.Minute),
-            limit=self._bar_limit,
+            timeframe=self._timeframe,
+            start=self._window_start(),
         )
         response = await asyncio.to_thread(self._crypto_client.get_crypto_bars, request)
-        bars = response.data.get(symbol, [])
+        bars = list(response.data.get(symbol, []))[-self._bar_limit :]
         if not bars:
             raise RuntimeError(f"No crypto bars returned for {symbol}")
         rows: List[dict] = []
@@ -139,22 +159,21 @@ class DataPipeline:
         self,
         frame: pd.DataFrame,
         sentiment_score: float = 0.0,
+        macro_sentiment: float = 0.0,
     ) -> pd.DataFrame:
-        """Compute RSI, MACD, and ATR features.
+        """Compute the full model feature set (see bot.features.FEATURE_COLUMNS).
 
         Args:
             frame: OHLCV DataFrame.
-            sentiment_score: Optional sentiment token in [-1.0, 1.0].
+            sentiment_score: News sentiment in [-1.0, 1.0].
+            macro_sentiment: Macro mood in [-1.0, 1.0].
 
         Returns:
-            DataFrame enriched with rsi, macd, atr, and sentiment_score columns.
+            DataFrame enriched with every feature column plus ``atr``.
         """
         if frame.empty:
             return frame
-        enriched = compute_rsi_macd(frame.copy())
-        enriched["atr"] = compute_atr(frame, length=self._atr_period)
-        enriched["sentiment_score"] = sentiment_score
-        return enriched
+        return build_features(frame, sentiment_score=sentiment_score, macro_sentiment=macro_sentiment)
 
     def latest_bar_state(
         self,
@@ -176,10 +195,20 @@ class DataPipeline:
         """
         if frame.empty:
             return None
-        feature_frame = self.compute_features(frame, sentiment_score=sentiment_score)
+        feature_frame = self.compute_features(
+            frame, sentiment_score=sentiment_score, macro_sentiment=macro_sentiment
+        )
         if feature_frame.empty:
             return None
         row = feature_frame.iloc[-1]
+        if pd.isna(row.get("dist_sma50")):
+            logger.error(
+                "[ERROR] %s: only %d bars, need %d+ for the feature warm-up",
+                symbol,
+                len(feature_frame),
+                60,
+            )
+            return None
         try:
             return MarketBarState(
                 timestamp=str(row["timestamp"]),
@@ -194,6 +223,7 @@ class DataPipeline:
                 sentiment_score=float(sentiment_score),
                 macro_sentiment=float(macro_sentiment),
                 atr=float(row.get("atr", 0.0) or 0.0),
+                features=feature_row(feature_frame),
             )
         except Exception as exc:
             logger.error("[ERROR] Failed to validate MarketBarState for %s: %s", symbol, exc)

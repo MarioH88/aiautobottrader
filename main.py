@@ -8,6 +8,7 @@ import logging
 from bot.config import BotConfig
 from bot.flag_file import read_flag, write_flag
 from bot.logging_setup import configure_logging
+from bot.process_lock import acquire_process_lock, release_process_lock
 from bot.scheduler import describe_active_window, is_trading_window_active, load_scheduler_config
 from bot.trading_bot import TradingBot
 
@@ -20,12 +21,19 @@ async def main() -> None:
     configure_logging(config.runtime_log_file)
     bot = TradingBot(config)
     schedule = load_scheduler_config(config.scheduler_config_file)
+    if not acquire_process_lock(config.process_lock_file):
+        raise SystemExit(1)
+
     logger.info(
         "[INFO] Autonomous AI Trading Bot ready (paper=%s, auto_start=%s, symbols=%s)",
         config.paper,
         config.auto_start,
         config.symbols,
     )
+    if not config.paper:
+        logger.error(
+            "[CRITICAL] LIVE trading account detected — use paper keys until you trust daily behavior"
+        )
     logger.info("[INFO] %s", describe_active_window(schedule))
 
     if config.auto_start:
@@ -41,7 +49,10 @@ async def main() -> None:
             else:
                 logger.info("[INFO] AUTO_START requested — watch_flag will start the bot")
 
-    await bot.watch_flag()
+    try:
+        await bot.watch_flag()
+    finally:
+        release_process_lock(config.process_lock_file)
 
 
 if __name__ == "__main__":

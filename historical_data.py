@@ -83,8 +83,8 @@ def fetch_yahoo_history(
         return data
     if isinstance(data.columns, pd.MultiIndex):
         data.columns = data.columns.get_level_values(0)
-    data = data.rename(columns={col: str(col).lower() for col in data.columns})
     data = data.reset_index()
+    data = data.rename(columns={col: str(col).lower() for col in data.columns})
     if "datetime" in data.columns and "timestamp" not in data.columns:
         data = data.rename(columns={"datetime": "timestamp"})
     if "date" in data.columns and "timestamp" not in data.columns:

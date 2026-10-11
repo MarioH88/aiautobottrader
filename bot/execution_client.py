@@ -16,6 +16,7 @@ from alpaca.trading.requests import GetOrdersRequest, MarketOrderRequest, StopOr
 from bot.allocation_engine import AllocationEngine
 from bot.schemas import MarketBarState, OrderResult, PositionState, TradeSignal
 from bot.symbols import normalize_symbol, to_trading_symbol
+from bot.trade_limits import count_buys_today
 from notify import send_discord
 
 logger = logging.getLogger("trading_bot")
@@ -34,6 +35,7 @@ class ExecutionClient:
         order_qty: float = 1.0,
         max_allocation_pct: float = 0.10,
         log_file: str = "trade_log.csv",
+        max_daily_buys: int = 20,
     ) -> None:
         """Initialize the execution client."""
         self._client = TradingClient(api_key, api_secret, paper=paper)
@@ -42,6 +44,7 @@ class ExecutionClient:
         self._order_qty = order_qty
         self._allocator = AllocationEngine(base_qty=order_qty, max_allocation_pct=max_allocation_pct)
         self._log_file = log_file
+        self._max_daily_buys = max(0, max_daily_buys)
         self._positions: Dict[str, PositionState] = {}
         self._discord_webhook = os.getenv("DISCORD_WEBHOOK_URL", "").strip()
 
@@ -332,6 +335,13 @@ class ExecutionClient:
         buying_power = await self.get_buying_power()
 
         if signal.action == "buy" and held_qty <= 0:
+            if self._max_daily_buys > 0 and count_buys_today(self._log_file) >= self._max_daily_buys:
+                logger.info(
+                    "[INFO] Daily buy cap reached (%s) — skipping buy for %s",
+                    self._max_daily_buys,
+                    bar.symbol,
+                )
+                return None
             qty = self._allocator.target_quantity(signal, bar, buying_power, held_qty)
             if qty <= 0:
                 logger.info("[INFO] Insufficient buying power for %s", bar.symbol)

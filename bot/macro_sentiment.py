@@ -13,20 +13,44 @@ logger = logging.getLogger("trading_bot")
 
 
 class MacroSentimentService:
-    """Loads and serves macro sentiment scores from a local CSV export."""
+    """Serves a macro market-mood score from live FRED data or a local CSV export."""
 
-    def __init__(self, csv_path: str = "macro_sentiment.csv") -> None:
+    def __init__(self, csv_path: str = "macro_sentiment.csv", source: str = "fred") -> None:
         """Initialize the macro sentiment service.
 
         Args:
-            csv_path: Path to a Kaggle-exported CSV with date and sentiment columns.
+            csv_path: Path to a Kaggle-exported CSV with date and sentiment columns (fallback).
+            source: ``"fred"`` for live FRED series, ``"csv"`` for the static file.
         """
         self._csv_path = csv_path
+        self._source = (source or "fred").strip().lower()
         self._score: float = 0.0
         self._loaded = False
+        self._fred: Optional[object] = None
         self._load()
 
     def _load(self) -> None:
+        """Load the latest macro score (FRED first, CSV fallback)."""
+        if self._source == "fred":
+            try:
+                from bot.macro_fred import MacroFredService
+
+                self._fred = MacroFredService()
+                if self._fred.is_loaded:
+                    self._score = self._fred.get_score()
+                    self._loaded = True
+                    return
+                logger.warning("[ERROR] FRED macro unavailable; falling back to CSV")
+            except Exception as exc:
+                logger.error("[ERROR] FRED macro init failed: %s", exc)
+        self._load_csv()
+
+    @property
+    def fred(self) -> Optional[object]:
+        """Underlying MacroFredService when the FRED source is active (used for training joins)."""
+        return self._fred
+
+    def _load_csv(self) -> None:
         """Load the most recent macro sentiment score from disk."""
         if not os.path.exists(self._csv_path):
             logger.info("[INFO] Macro sentiment file not found: %s (using 0.0)", self._csv_path)

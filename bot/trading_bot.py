@@ -21,6 +21,7 @@ from bot.scheduler import (
     is_trading_window_active,
     load_scheduler_config,
 )
+from bot.daily_status import write_bot_status
 from bot.stream_client import StreamClient
 from bot.strategy_engine import StrategyEngine
 
@@ -48,8 +49,13 @@ class TradingBot:
             self.config.api_secret,
             bar_limit=self.config.bar_limit,
             atr_period=self.config.atr_period,
+            timeframe_min=self.config.bar_timeframe_min,
+            data_feed=self.config.data_feed,
         )
-        self.strategy_engine = StrategyEngine(model_path=self.config.model_path)
+        self.strategy_engine = StrategyEngine(
+            model_path=self.config.model_path,
+            min_signal_confidence=self.config.min_signal_confidence,
+        )
         self.execution_client = ExecutionClient(
             api_key=self.config.api_key,
             api_secret=self.config.api_secret,
@@ -59,16 +65,21 @@ class TradingBot:
             order_qty=self.config.order_qty,
             max_allocation_pct=self.config.max_allocation_pct,
             log_file=self.config.log_file,
+            max_daily_buys=self.config.max_daily_buys,
         )
         self.macro_service: Optional[MacroSentimentService] = None
         if self.config.enable_macro_sentiment:
-            self.macro_service = MacroSentimentService(csv_path=self.config.macro_sentiment_csv)
+            self.macro_service = MacroSentimentService(
+                csv_path=self.config.macro_sentiment_csv,
+                source=self.config.macro_source,
+            )
         self.news_service: Optional[NewsSentimentService] = None
         if self.config.enable_news:
             self.news_service = NewsSentimentService(
                 self.config.api_key,
                 self.config.api_secret,
                 lookback_minutes=self.config.news_lookback_minutes,
+                sentiment_model=self.config.sentiment_model,
             )
         self.stream_client = StreamClient(
             self.config.api_key,
@@ -151,6 +162,18 @@ class TradingBot:
                 await self.connection_manager.run_with_retry(
                     lambda: self.execution_client.process_signal(signal, bar_state),
                     label=f"process_signal:{symbol}",
+                )
+                schedule = load_scheduler_config(self.config.scheduler_config_file)
+                write_bot_status(
+                    self.config.status_file,
+                    paper=self.config.paper,
+                    symbols=self.config.symbols,
+                    running=self._running,
+                    scheduler_enabled=bool(schedule.get("enabled")),
+                    in_trading_window=is_trading_window_active(schedule),
+                    flag_command=read_flag(self.config.flag_file) or "stop",
+                    last_signal=signal,
+                    last_bar=bar_state,
                 )
             except Exception as exc:
                 logger.error("[CRITICAL] Execution tick failed for %s: %s", symbol, exc)
@@ -281,6 +304,15 @@ class TradingBot:
         if self._main_task is not None and not self._main_task.done():
             return
         self._websocket_enabled = self.config.use_websocket
+        if self._websocket_enabled and self.config.bar_timeframe_min != 1:
+            # The stream delivers 1-minute bars; feeding them to a model trained on
+            # BAR_TIMEFRAME_MIN bars would silently corrupt every feature.
+            logger.error(
+                "[ERROR] USE_WEBSOCKET ignored: model uses %d-minute bars but the stream is 1-minute. "
+                "Using REST polling.",
+                self.config.bar_timeframe_min,
+            )
+            self._websocket_enabled = False
         self._main_task = asyncio.create_task(self.run_loop())
 
     async def stop(self) -> None:

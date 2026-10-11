@@ -154,6 +154,77 @@ def test_allocation_fractional() -> int:
     return failures
 
 
+def test_strategy_confidence_gate() -> int:
+    failures = 0
+    print("=== Test 0g: ML confidence gate ===")
+    try:
+
+        import numpy as np
+
+        class _FakeModel:
+            classes_ = np.array([0, 1])
+
+            def predict(self, _features):
+                return [0]
+
+            def predict_proba(self, _features):
+                return [[0.70, 0.30]]
+
+        engine = StrategyEngine(model_path="__missing__.pkl", min_signal_confidence=0.58)
+        engine._apply_artifact(_FakeModel())  # legacy binary estimator path
+        bar = MarketBarState(
+            timestamp="t",
+            symbol="AAPL",
+            open=100,
+            high=101,
+            low=99,
+            close=100,
+            volume=1,
+            rsi=50,
+            macd=0.0,
+            sentiment_score=0.0,
+        )
+        strong = engine.evaluate(bar)
+        assert strong.action == "sell" and strong.reason == "ml-5m-down"
+
+        class _WeakModel:
+            classes_ = np.array([0, 1])
+
+            def predict(self, _features):
+                return [1]
+
+            def predict_proba(self, _features):
+                return [[0.45, 0.55]]
+
+        engine._apply_artifact(_WeakModel())
+        weak = engine.evaluate(bar)
+        assert weak.action == "hold" and weak.reason == "ml-low-confidence"
+
+        class _ThreeClass:
+            classes_ = np.array([0, 1, 2])
+
+            def predict(self, _features):
+                return [2]
+
+            def predict_proba(self, _features):
+                return [[0.10, 0.25, 0.65]]
+
+        from bot.features import FEATURE_COLUMNS
+
+        engine._apply_artifact(
+            {"model": _ThreeClass(), "feature_columns": FEATURE_COLUMNS, "n_classes": 3,
+             "recommended_min_confidence": 0.5}
+        )
+        rich_bar = bar.model_copy(update={"features": {c: 0.0 for c in FEATURE_COLUMNS}})
+        up = engine.evaluate(rich_bar)
+        assert up.action == "buy" and up.reason == "ml-up", up
+        print("  OK  low confidence -> hold; 3-class up -> buy")
+    except Exception as exc:
+        print(f"  FAIL  {exc}")
+        failures += 1
+    return failures
+
+
 def test_backtest_summary() -> int:
     failures = 0
     print("=== Test 0f: Backtest summary metrics ===")
@@ -184,12 +255,19 @@ async def run_tests() -> int:
     failures += test_flag_bom()
     failures += await test_trailing_stop_logic()
     failures += test_allocation_fractional()
+    failures += test_strategy_confidence_gate()
     failures += test_backtest_summary()
 
     cfg = BotConfig()
 
     print("=== Test 1: Alpaca bar fetch ===")
-    pipeline = DataPipeline(cfg.api_key, cfg.api_secret, bar_limit=50)
+    pipeline = DataPipeline(
+        cfg.api_key,
+        cfg.api_secret,
+        bar_limit=cfg.bar_limit,
+        timeframe_min=cfg.bar_timeframe_min,
+        data_feed=cfg.data_feed,
+    )
     frame = None
     try:
         frame = await pipeline.fetch_bars("AAPL")
@@ -210,12 +288,15 @@ async def run_tests() -> int:
         print(f"  FAIL  {exc}")
         failures += 1
 
-    print("=== Test 2: News + VADER sentiment ===")
-    news = NewsSentimentService(cfg.api_key, cfg.api_secret)
-    macro = MacroSentimentService(cfg.macro_sentiment_csv)
+    print("=== Test 2: News sentiment (FinBERT/VADER) + FRED macro ===")
+    news = NewsSentimentService(
+        cfg.api_key, cfg.api_secret, lookback_minutes=7 * 24 * 60, sentiment_model=cfg.sentiment_model
+    )
+    macro = MacroSentimentService(cfg.macro_sentiment_csv, source=cfg.macro_source)
     try:
         await news.fetch_recent(cfg.symbols + ["BTC/USD"])
         macro_score = macro.get_score()
+        print(f"  OK  scorer={news.scorer_name} macro_loaded={macro.is_loaded}")
         for sym in cfg.symbols:
             combined = combine_sentiment(news.get_sentiment(sym), macro_score, cfg.sentiment_news_weight)
             print(f"  OK  {sym} news={news.get_sentiment(sym):.3f} macro={macro_score:.3f} combined={combined:.3f}")
@@ -231,7 +312,11 @@ async def run_tests() -> int:
         combined = combine_sentiment(news.get_sentiment("AAPL"), macro.get_score(), cfg.sentiment_news_weight)
         bar = pipeline.latest_bar_state(frame, "AAPL", sentiment_score=combined, macro_sentiment=macro.get_score())
         signal = engine.evaluate(bar)
-        print(f"  OK  signal={signal.action} confidence={signal.confidence:.2f}")
+        assert len(bar.features) >= 15, f"feature vector incomplete: {len(bar.features)}"
+        print(
+            f"  OK  signal={signal.action} confidence={signal.confidence:.2f} "
+            f"reason={signal.reason} features={len(bar.features)} threshold={engine.min_confidence:.2f}"
+        )
     except Exception as exc:
         print(f"  FAIL  {exc}")
         failures += 1

@@ -9,9 +9,9 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 from tqdm import tqdm
 
+from bot.features import FEATURE_COLUMNS, build_features
 from historical_data import fetch_alpaca_history, fetch_yahoo_history
-from indicators import add_indicators
-from ml_predict import FEATURE_COLUMNS, load_sklearn_model, predict_action
+from ml_predict import load_sklearn_model, predict_action
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -29,7 +29,7 @@ def _decide_action(
         pred = predict_action(model, features)
         if pred == 1 and position == 0:
             return 1
-        if pred == 0 and position > 0:
+        if pred == -1 and position > 0:
             return -1
         return 0
     rsi = row.get("rsi", row.get("rsi_14", 50))
@@ -106,12 +106,12 @@ def backtest(
     """Backtest a trading strategy with ATR trailing stops."""
     try:
         if use_yahoo:
-            df = fetch_yahoo_history(symbol, interval="1m", period="5d")
+            df = fetch_yahoo_history(symbol, interval="5m", period="59d")
             if df.empty:
                 logging.warning("Yahoo data empty for %s, falling back to Alpaca", symbol)
-                df = fetch_alpaca_history(symbol, "1Min", limit)
+                df = fetch_alpaca_history(symbol, "5Min", limit)
         else:
-            df = fetch_alpaca_history(symbol, "1Min", limit)
+            df = fetch_alpaca_history(symbol, "5Min", limit)
     except Exception as exc:
         logging.error("Error fetching data for %s: %s", symbol, exc)
         return pd.DataFrame()
@@ -120,11 +120,9 @@ def backtest(
         return pd.DataFrame()
 
     try:
-        df = add_indicators(df)
-        if "sentiment_score" not in df.columns:
-            df["sentiment_score"] = 0.0
-        if "atr" not in df.columns and "ATR" in df.columns:
-            df["atr"] = df["ATR"]
+        # Same feature code the live bot and trainer use, so the backtest is apples-to-apples.
+        df = build_features(df.sort_values("timestamp"), sentiment_score=0.0, macro_sentiment=0.0)
+        df = df.dropna(subset=FEATURE_COLUMNS).reset_index(drop=True)
     except Exception as exc:
         logging.error("Error adding indicators: %s", exc)
         return pd.DataFrame()
@@ -142,8 +140,7 @@ def backtest(
     for i in iterator:
         row = df.iloc[i]
         try:
-            feature_cols = [c for c in FEATURE_COLUMNS if c in df.columns]
-            features = row[feature_cols].to_frame().T
+            features = row[FEATURE_COLUMNS].to_frame().T.astype(float)
             if features.isnull().any().any():
                 continue
         except KeyError:

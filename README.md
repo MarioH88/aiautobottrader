@@ -88,10 +88,35 @@ Edit `.env` and set at least:
 ### 4. Train the ML model
 
 ```bash
-python train_model.py
+python build_training_data.py   # ~2 years of 5m bars (Alpaca IEX) + FRED macro regime per bar
+python train_model.py           # 3-class up/flat/down XGBoost, out-of-sample report, model.pkl
 ```
 
-This reads `train_data.csv` and writes `model.pkl` (also gitignored — regenerate locally).
+This writes `train_data.csv` and `model.pkl` (both gitignored — regenerate locally).
+`train_model.py` prints held-out accuracy and a confidence-threshold table; the bot only acts when
+the model's up/down probability clears the **recommended threshold** stored in `model.pkl`
+(override with `MIN_SIGNAL_CONFIDENCE`). If the report says *no measurable edge*, stay on paper.
+
+Alternate data source: `TRAIN_DATA_SOURCE=yfinance` (Yahoo caps 5-minute history at 60 days; use
+`BAR_TIMEFRAME_MIN=60` for 2 years of hourly bars).
+
+---
+
+## Daily use (recommended workflow)
+
+1. **One bot process only** — `main.py` uses `bot.pid` so a second copy exits instead of hitting Alpaca connection limits.
+2. **Market hours** — `scheduler_config.json` defaults to **enabled**, Mon–Fri 9:30–16:00 ET. Outside the window the bot pauses even if the flag is `start`.
+3. **Morning prep (Windows)** — refresh data, retrain, test, then start:
+
+```powershell
+.\run_daily.ps1
+```
+
+4. **Dashboard (optional)** — in another terminal: `streamlit run dashboard_app.py` for prices, manual trades, and scheduler edits.
+5. **Signals** — set `MIN_SIGNAL_CONFIDENCE` (default `0.58`) so weak ML predictions become **hold** instead of churning sells. `MAX_DAILY_BUYS` caps new entries per day.
+6. **Status file** — each tick updates `bot_status.json` (last signal, window state) for quick checks without reading logs.
+
+Use **paper** keys until you are comfortable leaving the bot running unattended.
 
 ---
 
@@ -139,11 +164,22 @@ Ensure a valid `.env` is present in the project root before starting containers.
 
 ## How the Bot Learns to Trade
 
-1. **Train offline:** `python train_model.py` fits Random Forest/XGBoost on `train_data.csv` (RSI, MACD, sentiment) and saves `model.pkl`
-2. **Trade live:** each cycle computes the same features from market + news data and asks the model for buy/sell/hold
-3. **Manage risk:** allocation sizes the order; ATR trailing stops protect positions
-4. **Fallback:** if the model is unavailable, RSI/MACD rules still trade
-5. **Improve:** update training data, retrain, restart — the bot does not auto-relearn after each trade
+1. **Build data:** `build_training_data.py` pulls ~2 years of 5-minute bars and computes 17 features
+   (`bot/features.py`: RSI, MACD + histogram, 1/3/6/12-bar returns, volume ratio, ATR%, bar range,
+   distance from SMA20/50, Bollinger position, time-of-day, news sentiment, FRED macro score).
+   Each bar is labeled **up / flat / down** by whether the close 6 bars later moved more than 0.5×ATR.
+2. **Train offline:** `train_model.py` fits XGBoost (or Random Forest), holds out the newest 20% of
+   bars, and reports how often confident up/down calls were right vs. wrong at each threshold.
+3. **Trade live:** every cycle the bot computes the *same* features from Alpaca bars, FinBERT-scored
+   headlines, and live FRED macro data, then acts only when P(up) or P(down) clears the threshold.
+4. **Manage risk:** allocation sizes the order; ATR trailing stops protect positions; `MAX_DAILY_BUYS` caps entries.
+5. **Fallback:** if the model is unavailable, RSI/MACD rules still trade.
+6. **Improve:** rerun steps 1–2 periodically (e.g. weekly) and restart — the bot does not auto-relearn.
+
+**Sentiment:** `SENTIMENT_MODEL=finbert` uses the ProsusAI/finbert transformer (downloaded on first
+run, ~440 MB, CPU is fine); set `vader` for a lightweight lexicon scorer.
+**Macro:** `MACRO_SOURCE=fred` pulls VIX, high-yield spreads, the 10y–2y curve, 10y yield, the dollar
+index and the S&P 500 from FRED (no API key), z-scores their 20-day changes and blends them into [-1, 1].
 
 ---
 
@@ -158,6 +194,14 @@ Ensure a valid `.env` is present in the project root before starting containers.
 | `SCHEDULER_CONFIG_FILE` | `scheduler_config.json` | Trading windows |
 | `DISCORD_WEBHOOK_URL` | empty | Trade / failure alerts |
 | `MAX_ALLOCATION_PCT` | `0.10` | Max buying-power fraction per symbol |
+| `MIN_SIGNAL_CONFIDENCE` | *(from model.pkl)* | Min P(up)/P(down) to act; blank = trainer's recommendation |
+| `MAX_DAILY_BUYS` | `20` | Cap new buy orders per UTC day (`0` = unlimited) |
+| `BAR_TIMEFRAME_MIN` | `5` | Bar size for features; must match training |
+| `ML_MODEL_TYPE` | `xgboost` | `xgboost` or `random_forest` |
+| `SENTIMENT_MODEL` | `finbert` | `finbert` or `vader` |
+| `MACRO_SOURCE` | `fred` | `fred` (live) or `csv` (static file) |
+| `TRAIN_DATA_SOURCE` | `alpaca` | `alpaca` or `yfinance` |
+| `TRAIN_LOOKBACK_DAYS` | `730` | History pulled by `build_training_data.py` |
 | `REST_FALLBACK_INTERVAL_SEC` | `120` | REST poll when WebSocket down |
 
 ---

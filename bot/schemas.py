@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Dict, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -22,6 +22,8 @@ class MarketBarState(BaseModel):
     sentiment_score: float = Field(default=0.0, ge=-1.0, le=1.0)
     macro_sentiment: float = Field(default=0.0, ge=-1.0, le=1.0)
     atr: float = Field(default=0.0, ge=0.0)
+    # Full model feature vector (see bot.features.FEATURE_COLUMNS); rsi/macd kept for logging.
+    features: Dict[str, float] = Field(default_factory=dict)
 
     @field_validator("volume", mode="before")
     @classmethod

@@ -16,6 +16,10 @@ env/
 # Runtime / logs
 bot_runtime.log
 bot_control.flag
+bot.pid
+bot_status.json
+train_data.csv
+macro_fred_cache.csv
 trade_log.csv
 trades_*.csv
 *.log
